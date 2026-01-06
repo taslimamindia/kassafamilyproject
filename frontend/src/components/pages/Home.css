@@ -1,0 +1,11 @@
+.home-illustration {
+  height: 220px;
+  background: linear-gradient(135deg, #e3f2fd, #e8f5e9);
+  border: 1px solid rgba(0,0,0,0.05);
+}
+
+@media (min-width: 768px) {
+  .home-illustration {
+    height: 320px;
+  }
+}

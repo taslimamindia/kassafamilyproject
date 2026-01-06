@@ -1,0 +1,20 @@
+.bg-light {
+        background-color: #f8f9fa !important;
+}
+
+footer .container {
+    text-align: center;
+}
+
+footer a {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 44px; /* better touch target */
+}
+
+@media (min-width: 576px) {
+    footer .container {
+        text-align: initial;
+    }
+}
