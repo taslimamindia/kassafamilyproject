@@ -7,9 +7,9 @@ const imagesDict = import.meta.glob('@assets/img/parents/*.*', {
 
 function Home() {
 	return (
-		<section className="py-4 py-md-5 h-100">
-			<div className="container h-100">
-				<div className="row h-100 align-items-center g-4">
+		<section className="py-4 py-md-5">
+			<div className="container">
+				<div className="row align-items-center g-4">
 					<div className="col-12 col-md-6 d-flex flex-column justify-content-center h-100">
 						<h1 className="display-6 fw-semibold mb-3">Bienvenue à l'Association Familiale</h1>
 						<p className="lead mb-4">

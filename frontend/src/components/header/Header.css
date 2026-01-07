@@ -32,3 +32,11 @@
         padding: .5rem 0;
     }
 }
+
+/* Avoid sticky header overlay on small-height landscape (mobile) */
+@media (orientation: landscape) and (max-height: 480px) {
+    header.sticky-top {
+        position: static !important;
+        top: auto !important;
+    }
+}

@@ -13,7 +13,7 @@ import Profile from './components/profil/Profile'
 
 function App() {
   return (
-    <div className="d-flex flex-column vh-100">
+    <div className="d-flex flex-column" style={{ minHeight: '100dvh' }}>
       <ToastContainer position="top-center" autoClose={2000} newestOnTop closeOnClick theme="colored" />
       <Header />
       <main className="flex-grow-1 overflow-auto">
