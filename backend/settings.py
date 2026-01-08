@@ -40,6 +40,16 @@ class Settings:
         self.admin_telephone = os.getenv("ADMIN_TELEPHONE")
         self.admin_birthday = os.getenv("ADMIN_BIRTHDAY")
 
+        # AWS S3 configuration (optional in local dev)
+        self.aws_s3_bucket = os.getenv("AWS_S3_BUCKET")
+        self.aws_region = os.getenv("AWS_REGION")
+        self.aws_access_key_id = os.getenv("AWS_ACCESS_KEY_ID")
+        self.aws_secret_access_key = os.getenv("AWS_SECRET_ACCESS_KEY")
+        self.aws_s3_public_base = os.getenv("AWS_S3_PUBLIC_BASE")
+        # Optional: base folder prefix inside the bucket (e.g., "kassa-dev")
+        self.aws_s3_base_folder = os.getenv("AWS_S3_BASE_FOLDER")
+        self.aws_base_folder = os.getenv("AWS_BASE_FOLDER")
+
     def get_db_config(self):
         if self.env == "prod":
             return {
