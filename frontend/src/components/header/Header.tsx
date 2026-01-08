@@ -2,17 +2,35 @@ import './Header.css'
 import { Link, NavLink, useNavigate } from 'react-router-dom'
 import { useEffect, useState } from 'react'
 import { logout, verifyToken } from '../../services/auth'
+import { getCurrentUser } from '../../services/users'
+import { getRolesForUser } from '../../services/roleAttributions'
 
 function Header() {
     const navigate = useNavigate()
     const [isAuth, setIsAuth] = useState<boolean | null>(null)
+    const [isAdmin, setIsAdmin] = useState<boolean>(false)
 
     useEffect(() => {
         let mounted = true
-        const refresh = () => {
-            verifyToken()
-                .then((ok) => { if (mounted) setIsAuth(ok) })
-                .catch(() => { if (mounted) setIsAuth(false) })
+        const refresh = async () => {
+            try {
+                const ok = await verifyToken()
+                if (!mounted) return
+                setIsAuth(ok)
+                if (ok) {
+                    try {
+                        const user = await getCurrentUser()
+                        const roles = await getRolesForUser(user.id)
+                        setIsAdmin(roles.some(r => r.role?.toLowerCase() === 'admin'))
+                    } catch {
+                        setIsAdmin(false)
+                    }
+                } else {
+                    setIsAdmin(false)
+                }
+            } catch {
+                if (mounted) { setIsAuth(false); setIsAdmin(false) }
+            }
         }
         // Initial check
         refresh()
@@ -29,7 +47,7 @@ function Header() {
 
     function onLogout() {
         logout()
-        navigate('/auth', { replace: true })
+        navigate('/', { replace: true })
     }
 
     return (
@@ -56,7 +74,16 @@ function Header() {
                                 Accueil
                             </NavLink>
                         </li> */}
-                        {/* Auth controls */}
+                        {/* Order: Admin (left), then Profile/Login (far right) */}
+                        {isAuth && isAdmin && (
+                            <li className="nav-item">
+                                <NavLink to="/admin" className={({ isActive }) => `nav-link d-flex align-items-center gap-2 ${isActive ? 'active' : ''}`}>
+                                    <i className="bi bi-shield-lock" aria-hidden="true"></i>
+                                    Admin
+                                </NavLink>
+                            </li>
+                        )}
+
                         {isAuth === null ? null : isAuth ? (
                             <li className="nav-item dropdown">
                                 <button
