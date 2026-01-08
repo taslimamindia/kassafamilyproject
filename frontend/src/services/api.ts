@@ -12,7 +12,21 @@ export async function apiFetch(path: string, init: RequestInit = {}): Promise<Re
     const token = getStoredToken()
     const headers = new Headers(init.headers || {})
     if (token) headers.set('Authorization', `Bearer ${token}`)
-    return fetch(`${API_BASE_URL}${path}`, { ...init, headers })
+    const res = await fetch(`${API_BASE_URL}${path}`, { ...init, headers })
+    if (res.status === 401 || res.status === 403) {
+        try {
+            localStorage.removeItem('access_token')
+            try { window.dispatchEvent(new Event('auth-changed')) } catch {}
+        } catch {}
+        // Avoid infinite loop if already on /auth
+        try {
+            const isOnAuth = typeof window !== 'undefined' && window.location && window.location.pathname === '/auth'
+            if (!isOnAuth) {
+                window.location.assign('/auth')
+            }
+        } catch {}
+    }
+    return res
 }
 
 export async function getJson<T>(path: string, init: RequestInit = {}): Promise<T> {
