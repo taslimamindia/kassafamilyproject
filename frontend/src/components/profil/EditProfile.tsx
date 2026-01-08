@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { getCurrentUser, updateCurrentUser, type User } from '../../services/users'
+import { getCurrentUser, updateUserById, updateUserByIdWithImage, type User } from '../../services/users'
+import { getRolesForUser } from '../../services/roleAttributions'
 
 export default function EditProfile() {
     const [form, setForm] = useState<Partial<User>>({})
@@ -7,6 +8,9 @@ export default function EditProfile() {
     const [saving, setSaving] = useState(false)
     const [error, setError] = useState<string | null>(null)
     const [success, setSuccess] = useState<string | null>(null)
+    const [imageFile, setImageFile] = useState<File | null>(null)
+    const [myId, setMyId] = useState<number | null>(null)
+    const [isAdmin, setIsAdmin] = useState<boolean>(false)
 
     useEffect(() => {
         async function load() {
@@ -15,12 +19,21 @@ export default function EditProfile() {
             try {
                 const me = await getCurrentUser()
                 setForm({
+                    username: me.username,
                     firstname: me.firstname,
                     lastname: me.lastname,
                     email: me.email,
                     telephone: me.telephone,
                     birthday: me.birthday,
+                    image_url: me.image_url,
                 })
+                setMyId(me.id)
+                try {
+                    const roles = await getRolesForUser(me.id)
+                    setIsAdmin(roles.some(r => (r.role || '').toLowerCase() === 'admin'))
+                } catch {
+                    setIsAdmin(false)
+                }
             } catch (e) {
                 setError("Impossible de charger le profil")
             } finally {
@@ -40,13 +53,38 @@ export default function EditProfile() {
         setError(null)
         setSuccess(null)
         try {
-            await updateCurrentUser({
-                firstname: form.firstname,
-                lastname: form.lastname,
-                email: form.email,
-                telephone: form.telephone,
-                birthday: form.birthday,
-            })
+            if (myId !== null) {
+                const payload = {
+                    username: isAdmin ? form.username : undefined,
+                    firstname: form.firstname,
+                    lastname: form.lastname,
+                    email: form.email,
+                    telephone: form.telephone,
+                    birthday: form.birthday,
+                }
+
+                let updatedUser: User;
+                if (imageFile) {
+                    updatedUser = await updateUserByIdWithImage(myId, payload, imageFile)
+                } else {
+                    updatedUser = await updateUserById(myId, {
+                        ...payload,
+                        image_url: form.image_url
+                    })
+                }
+                
+                // Mettre à jour le formulaire avec les nouvelles données du serveur (incluant la nouvelle image)
+                setForm({
+                    username: updatedUser.username,
+                    firstname: updatedUser.firstname,
+                    lastname: updatedUser.lastname,
+                    email: updatedUser.email,
+                    telephone: updatedUser.telephone,
+                    birthday: updatedUser.birthday,
+                    image_url: updatedUser.image_url,
+                })
+                setImageFile(null) // Reset du fichier sélectionné
+            }
             setSuccess('Profil mis à jour avec succès')
         } catch (e) {
             setError("Échec de la mise à jour")
@@ -66,6 +104,19 @@ export default function EditProfile() {
                 {success && <div className="alert alert-success">{success}</div>}
                 <div className="row g-3">
                     <div className="col-md-6">
+                        <label className="form-label">Nom d'utilisateur</label>
+                        <input
+                            className="form-control"
+                            value={form.username ?? ''}
+                            onChange={(e) => updateField('username', e.target.value as any)}
+                            disabled={!isAdmin}
+                            required={isAdmin}
+                        />
+                        {!isAdmin && (
+                            <div className="form-text">Vous ne pouvez pas modifier le nom d'utilisateur.</div>
+                        )}
+                    </div>
+                    <div className="col-md-6">
                         <label className="form-label">Prénom</label>
                         <input className="form-control" value={form.firstname ?? ''} onChange={(e) => updateField('firstname', e.target.value as any)} required />
                     </div>
@@ -84,6 +135,15 @@ export default function EditProfile() {
                     <div className="col-md-6">
                         <label className="form-label">Date de naissance</label>
                         <input type="date" className="form-control" value={form.birthday ?? ''} onChange={(e) => updateField('birthday', e.target.value as any)} />
+                    </div>
+                    <div className="col-md-6">
+                        <label className="form-label">Photo de profil</label>
+                        <input type="file" accept="image/*" className="form-control" onChange={e => setImageFile(e.target.files?.[0] ?? null)} />
+                        {form.image_url && (
+                            <div className="mt-2">
+                                <img src={form.image_url} alt="Aperçu" style={{ maxWidth: '120px', borderRadius: '8px' }} />
+                            </div>
+                        )}
                     </div>
                 </div>
             </div>
