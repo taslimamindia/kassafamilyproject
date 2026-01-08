@@ -7,9 +7,12 @@ import 'react-toastify/dist/ReactToastify.css'
 import Home from './components/pages/Home'
 import Errors from './components/pages/Errors'
 import ProtectedRoute from './ProtectedRoute'
+import AdminRoute from './AdminRoute'
+import HomeAdmin from './components/admin/HomeAdmin'
 import Login from './components/auth/Login'
 import Logout from './components/auth/Logout'
 import Profile from './components/profil/Profile'
+import CreateAdmin from './components/pages/CreateAdmin'
 
 function App() {
   return (
@@ -30,7 +33,24 @@ function App() {
             }
           />
 
+          <Route
+            path="/create-admin"
+            element={
+              <ProtectedRoute>
+                <CreateAdmin />
+              </ProtectedRoute>
+            }
+          />
+
           <Route path="/errors" element={<Errors />} />
+          <Route
+            path="/admin"
+            element={
+              <AdminRoute>
+                <HomeAdmin />
+              </AdminRoute>
+            }
+          />
           <Route path="*" element={<Navigate to="/errors" replace />} />
         </Routes>
       </main>
