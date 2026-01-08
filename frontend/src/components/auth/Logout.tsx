@@ -8,8 +8,8 @@ export default function Logout() {
 
     useEffect(() => {
         logout()
-        const fromPath = (location.state as { from?: { pathname?: string } } | null)?.from?.pathname ?? '/auth'
-        navigate(fromPath, { replace: true })
+        // Après déconnexion, rediriger vers l'accueil
+        navigate('/', { replace: true })
     }, [navigate, location])
 
     return <div className="container py-4">Déconnexion...</div>
