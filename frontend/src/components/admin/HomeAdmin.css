@@ -1,0 +1,8 @@
+.admin-actions {
+    gap: .5rem;
+}
+
+.table td,
+.table th {
+    vertical-align: middle;
+}
