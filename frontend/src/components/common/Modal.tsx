@@ -1,4 +1,16 @@
 import { useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
+import i18n from '../../i18n'
+// Localized dictionary for this component
+const modalResources = {
+    fr: { common: { close: 'Fermer' } },
+    en: { common: { close: 'Close' } },
+    ar: { common: { close: 'إغلاق' } },
+}
+
+for (const [lng, res] of Object.entries(modalResources)) {
+    i18n.addResourceBundle(lng, 'translation', res as any, true, false)
+}
 
 export default function Modal({
     isOpen,
@@ -13,6 +25,7 @@ export default function Modal({
     children: React.ReactNode
     size?: 'sm' | 'lg' | 'xl'
 }) {
+    const { t } = useTranslation()
     useEffect(() => {
         if (!isOpen) return
         const body = document.body
@@ -41,7 +54,7 @@ export default function Modal({
                     <div className="modal-content">
                         <div className="modal-header">
                             <h5 className="modal-title">{title}</h5>
-                            <button type="button" className="btn-close" aria-label="Close" onClick={onClose}></button>
+                            <button type="button" className="btn-close" aria-label={t('common.close')} onClick={onClose}></button>
                         </div>
                         <div className="modal-body">
                             {children}

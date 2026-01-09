@@ -3,6 +3,67 @@ import { Link } from 'react-router-dom'
 import { getToken } from '../../services/auth'
 import { getCurrentUser, type User } from '../../services/users'
 import './ViewProfile.css'
+import { useTranslation } from 'react-i18next'
+import i18n from '../../i18n'
+
+// Localized dictionary for this component (decentralized)
+const viewProfileResources = {
+    fr: {
+        profileView: {
+            loading: 'Chargement du profil...',
+            photoUnavailable: 'Photo indisponible (CORS ou accès privé probable).',
+            email: 'Email',
+            phone: 'Téléphone',
+            birthday: 'Date de naissance',
+            parentIds: 'Identifiants parentaux',
+            father: 'Père',
+            mother: 'Mère',
+            createAdmin: 'Créer un administrateur',
+        },
+        profileEdit: { profilePhoto: 'Photo de profil' },
+        common: { avatar: 'Avatar de profil' },
+        header: { editProfile: 'Modifier le profil' },
+        users: { card: { active: 'Actif', inactive: 'Inactif' } },
+    },
+    en: {
+        profileView: {
+            loading: 'Loading profile...',
+            photoUnavailable: 'Photo unavailable (likely CORS or private access).',
+            email: 'Email',
+            phone: 'Phone',
+            birthday: 'Birth date',
+            parentIds: 'Parental IDs',
+            father: 'Father',
+            mother: 'Mother',
+            createAdmin: 'Create an administrator',
+        },
+        profileEdit: { profilePhoto: 'Profile photo' },
+        common: { avatar: 'Profile avatar' },
+        header: { editProfile: 'Edit profile' },
+        users: { card: { active: 'Active', inactive: 'Inactive' } },
+    },
+    ar: {
+        profileView: {
+            loading: 'جارٍ تحميل الملف...',
+            photoUnavailable: 'الصورة غير متاحة (ربما CORS أو وصول خاص).',
+            email: 'البريد الإلكتروني',
+            phone: 'رقم الهاتف',
+            birthday: 'تاريخ الميلاد',
+            parentIds: 'معرّفات الوالدين',
+            father: 'الأب',
+            mother: 'الأم',
+            createAdmin: 'إنشاء مسؤول',
+        },
+        profileEdit: { profilePhoto: 'صورة الملف' },
+        common: { avatar: 'الصورة الرمزية للملف' },
+        header: { editProfile: 'تعديل الملف' },
+        users: { card: { active: 'نشط', inactive: 'غير نشط' } },
+    },
+}
+
+for (const [lng, res] of Object.entries(viewProfileResources)) {
+    i18n.addResourceBundle(lng, 'translation', res as any, true, false)
+}
 
 function base64UrlDecode(input: string): string {
     const base64 = input.replace(/-/g, '+').replace(/_/g, '/')
@@ -27,6 +88,7 @@ function parseJwt(token: string | null): { sub?: number; username?: string } {
 }
 
 export default function ViewProfile() {
+    const { t } = useTranslation()
     const token = getToken()
     const payload = useMemo(() => parseJwt(token), [token])
     const [user, setUser] = useState<User | null>(null)
@@ -47,7 +109,7 @@ export default function ViewProfile() {
                 setUser(me ?? null)
                 setShowImage(!!me?.image_url)
             } catch (e) {
-                setError('Impossible de charger le profil')
+                setError(t('profileEdit.loadError'))
             }
         }
         loadUser()
@@ -66,7 +128,7 @@ export default function ViewProfile() {
         <div className="profile-view">
             {error && <div className="alert alert-danger">{error}</div>}
             {!user ? (
-                <div className="profile-loading">Chargement du profil...</div>
+                <div className="profile-loading">{t('profileView.loading')}</div>
             ) : (
                 <div className="profile-card">
                     <div className="profile-header">
@@ -74,7 +136,7 @@ export default function ViewProfile() {
                             {user.image_url && showImage && !imageBroken ? (
                                 <img
                                     src={cacheBust ? `${user.image_url}${user.image_url.includes('?') ? '&' : '?'}v=${cacheBust}` : user.image_url}
-                                    alt="Photo de profil"
+                                    alt={t('profileEdit.profilePhoto')}
                                     key={user.image_url || 'profile-image'}
                                     onLoad={() => {
                                         if (imageBroken) setImageBroken(false)
@@ -90,57 +152,57 @@ export default function ViewProfile() {
                                     }}
                                 />
                             ) : (
-                                <div className="profile-avatar-fallback" aria-label="Avatar de profil">{initials}</div>
+                                <div className="profile-avatar-fallback" aria-label={t('common.avatar')}>{initials}</div>
                             )}
                         </div>
                         <div className="profile-ident">
                             <h1 className="profile-name">{user.firstname} {user.lastname}</h1>
                             <div className="profile-username">@{user.username ?? payload.username}</div>
                             <div className="profile-badges">
-                                <span className={`badge ${user.isactive === 1 ? 'badge-success' : 'badge-muted'}`}>{user.isactive === 1 ? 'Actif' : 'Inactif'}</span>
+                                <span className={`badge ${user.isactive === 1 ? 'badge-success' : 'badge-muted'}`}>{user.isactive === 1 ? t('users.card.active') : t('users.card.inactive')}</span>
                                 {typeof user.isfirstlogin !== 'undefined' && (
                                     <span className={`badge ${user.isfirstlogin === 1 ? 'badge-info' : 'badge-muted'}`}>
-                                        {user.isfirstlogin === 1 ? 'Première connexion' : 'Membre confirmé'}
+                                        {user.isfirstlogin === 1 ? t('common.firstLogin') : t('common.confirmedMember')}
                                     </span>
                                 )}
                             </div>
                         </div>
                         <div className="profile-tools">
-                            <Link to="/profil?edit=1" className="profile-edit-btn" aria-label="Modifier le profil">
-                                Modifier le profil
+                            <Link to="/profil?edit=1" className="profile-edit-btn" aria-label={t('header.editProfile')}>
+                                {t('header.editProfile')}
                             </Link>
                         </div>
                     </div>
 
                     {imageBroken && (
                         <div className="profile-error" role="alert">
-                            Photo indisponible (CORS ou accès privé probable).
+                            {t('profileView.photoUnavailable')}
                         </div>
                     )}
 
                     <div className="details-grid" role="list">
                         <div className="detail-item" role="listitem">
-                            <div className="detail-label">Email</div>
+                            <div className="detail-label">{t('profileView.email')}</div>
                             <div className="detail-value">{user.email ?? '—'}</div>
                         </div>
                         <div className="detail-item" role="listitem">
-                            <div className="detail-label">Téléphone</div>
+                            <div className="detail-label">{t('profileView.phone')}</div>
                             <div className="detail-value">{user.telephone ?? '—'}</div>
                         </div>
                         <div className="detail-item" role="listitem">
-                            <div className="detail-label">Date de naissance</div>
+                            <div className="detail-label">{t('profileView.birthday')}</div>
                             <div className="detail-value">{user.birthday ?? '—'}</div>
                         </div>
                         <div className="detail-item" role="listitem">
-                            <div className="detail-label">Identifiants parentaux</div>
+                            <div className="detail-label">{t('profileView.parentIds')}</div>
                             <div className="detail-value">
-                                Père: {user.id_father ?? '—'} | Mère: {user.id_mother ?? '—'}
+                                {t('profileView.father')}: {user.id_father ?? '—'} | {t('profileView.mother')}: {user.id_mother ?? '—'}
                             </div>
                         </div>
                     </div>
 
                     <div className="profile-actions">
-                        <Link to="/create-admin" className="btn btn-primary">Créer un administrateur</Link>
+                        <Link to="/create-admin" className="btn btn-primary">{t('profileView.createAdmin')}</Link>
                     </div>
                 </div>
             )}

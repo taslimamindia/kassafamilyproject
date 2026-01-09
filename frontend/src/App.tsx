@@ -13,49 +13,53 @@ import Login from './components/auth/Login'
 import Logout from './components/auth/Logout'
 import Profile from './components/profil/Profile'
 import CreateAdmin from './components/pages/CreateAdmin'
+import './i18n'
+import { LanguageProvider } from './contexts/LanguageContext'
 
 function App() {
   return (
-    <div className="d-flex flex-column" style={{ minHeight: '100dvh' }}>
-      <ToastContainer position="top-center" autoClose={2000} newestOnTop closeOnClick theme="colored" />
-      <Header />
-      <main className="flex-grow-1 overflow-auto">
-        <Routes>
-          <Route path="/" element={<Home />} />
-          <Route path="/auth" element={<Login />} />
-          <Route path="/logout" element={<Logout />} />
-          <Route
-            path="/profil"
-            element={
-              <ProtectedRoute>
-                <Profile />
-              </ProtectedRoute>
-            }
-          />
+    <LanguageProvider>
+      <div className="d-flex flex-column" style={{ minHeight: '100dvh' }}>
+        <ToastContainer position="top-center" autoClose={2000} newestOnTop closeOnClick theme="colored" />
+        <Header />
+        <main className="flex-grow-1 overflow-auto">
+          <Routes>
+            <Route path="/" element={<Home />} />
+            <Route path="/auth" element={<Login />} />
+            <Route path="/logout" element={<Logout />} />
+            <Route
+              path="/profil"
+              element={
+                <ProtectedRoute>
+                  <Profile />
+                </ProtectedRoute>
+              }
+            />
 
-          <Route
-            path="/create-admin"
-            element={
-              <ProtectedRoute>
-                <CreateAdmin />
-              </ProtectedRoute>
-            }
-          />
+            <Route
+              path="/create-admin"
+              element={
+                <ProtectedRoute>
+                  <CreateAdmin />
+                </ProtectedRoute>
+              }
+            />
 
-          <Route path="/errors" element={<Errors />} />
-          <Route
-            path="/admin"
-            element={
-              <AdminRoute>
-                <HomeAdmin />
-              </AdminRoute>
-            }
-          />
-          <Route path="*" element={<Navigate to="/errors" replace />} />
-        </Routes>
-      </main>
-      <Footer />
-    </div>
+            <Route path="/errors" element={<Errors />} />
+            <Route
+              path="/admin"
+              element={
+                <AdminRoute>
+                  <HomeAdmin />
+                </AdminRoute>
+              }
+            />
+            <Route path="*" element={<Navigate to="/errors" replace />} />
+          </Routes>
+        </main>
+        <Footer />
+      </div>
+    </LanguageProvider>
   )
 }
 

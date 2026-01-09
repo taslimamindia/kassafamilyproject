@@ -1,5 +1,18 @@
 import { useState } from 'react'
 import { createRole, updateRole, type Role } from '../../../services/roles'
+import { useTranslation } from 'react-i18next'
+import i18n from '../../../i18n'
+
+// Localized dictionary for this component (decentralized)
+const roleFormResources = {
+    fr: { roles: { form: { roleName: 'Nom du rôle', saveError: 'Erreur lors de la sauvegarde du rôle.', saving: 'Enregistrement...' } } },
+    en: { roles: { form: { roleName: 'Role name', saveError: 'Error saving role.', saving: 'Saving...' } } },
+    ar: { roles: { form: { roleName: 'اسم الدور', saveError: 'خطأ أثناء حفظ الدور.', saving: 'جارٍ الحفظ...' } } },
+}
+
+for (const [lng, res] of Object.entries(roleFormResources)) {
+    i18n.addResourceBundle(lng, 'translation', res as any, true, false)
+}
 
 export default function RoleForm({
     mode,
@@ -12,6 +25,7 @@ export default function RoleForm({
     onSaved: (role: Role) => void
     onCancel: () => void
 }) {
+    const { t } = useTranslation()
     const [roleName, setRoleName] = useState(initial?.role ?? '')
     const [saving, setSaving] = useState(false)
     const [error, setError] = useState<string | null>(null)
@@ -30,7 +44,7 @@ export default function RoleForm({
                 onSaved(updatedRole)
             }
         } catch (err) {
-            setError('Erreur lors de la sauvegarde du rôle.')
+            setError(t('roles.form.saveError'))
         } finally {
             setSaving(false)
         }
@@ -41,7 +55,7 @@ export default function RoleForm({
             {error && <div className="alert alert-danger">{error}</div>}
 
             <div className="mb-3">
-                <label htmlFor="roleName" className="form-label">Nom du rôle</label>
+                <label htmlFor="roleName" className="form-label">{t('roles.form.roleName')}</label>
                 <input
                     type="text"
                     className="form-control"
@@ -54,10 +68,10 @@ export default function RoleForm({
 
             <div className="d-flex justify-content-end gap-2">
                 <button type="button" className="btn btn-secondary" onClick={onCancel} disabled={saving}>
-                    Annuler
+                    {t('common.cancel')}
                 </button>
                 <button type="submit" className="btn btn-primary" disabled={saving}>
-                    {saving ? 'Enregistrement...' : 'Enregistrer'}
+                    {saving ? t('roles.form.saving') : t('common.save')}
                 </button>
             </div>
         </form>

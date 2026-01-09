@@ -5,8 +5,22 @@ import RoleForm from './RoleForm'
 import RolesTable from './RolesTable'
 import RoleAssignments from './RoleAssignments'
 import Modal from '../../common/Modal'
+import { useTranslation } from 'react-i18next'
+import i18n from '../../../i18n'
+
+// Localized dictionary for this component
+const rolesTabResources = {
+    fr: { roles: { loadError: 'Erreur lors du chargement des données', createRole: 'Créer un rôle', editRole: 'Modifier un rôle' }, common: { refresh: 'Actualiser' } },
+    en: { roles: { loadError: 'Error loading data', createRole: 'Create a role', editRole: 'Edit a role' }, common: { refresh: 'Refresh' } },
+    ar: { roles: { loadError: 'خطأ أثناء تحميل البيانات', createRole: 'إنشاء دور', editRole: 'تعديل دور' }, common: { refresh: 'تحديث' } },
+}
+
+for (const [lng, res] of Object.entries(rolesTabResources)) {
+    i18n.addResourceBundle(lng, 'translation', res as any, true, false)
+}
 
 export default function RolesTab() {
+    const { t } = useTranslation()
     const [roles, setRoles] = useState<Role[]>([])
     const [attributions, setAttributions] = useState<RoleAttribution[]>([])
     const [loading, setLoading] = useState(false)
@@ -29,7 +43,7 @@ export default function RolesTab() {
             setAttributions(attributionsData)
         } catch (e) {
             console.error(e)
-            setError('Erreur lors du chargement des données')
+            setError(t('roles.loadError'))
         } finally {
             setLoading(false)
         }
@@ -70,11 +84,11 @@ export default function RolesTab() {
              <div className="d-flex admin-actions mb-3">
                 <button className="btn btn-primary" onClick={startCreate}>
                     <i className="bi bi-plus-lg me-1" aria-hidden="true"></i>
-                    Ajouter un rôle
+                    {t('roles.addRole')}
                 </button>
                 <button className="btn btn-outline-secondary ms-2" onClick={refresh} disabled={loading}>
                     <i className="bi bi-arrow-clockwise me-1" aria-hidden="true"></i>
-                    Actualiser
+                    {t('common.refresh')}
                 </button>
             </div>
 
@@ -82,7 +96,7 @@ export default function RolesTab() {
 
             <Modal
                 isOpen={isEditing}
-                title={editingId === 0 ? 'Créer un rôle' : 'Modifier un rôle'}
+                title={editingId === 0 ? t('roles.createRole') : t('roles.editRole')}
                 onClose={cancelEdit} 
             >
                 {isEditing && (

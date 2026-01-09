@@ -1,11 +1,24 @@
 import { useMemo } from 'react'
 import type { RoleAttribution } from '../../../services/roleAttributions'
+import { useTranslation } from 'react-i18next'
+import i18n from '../../../i18n'
+// Localized dictionary for this component
+const roleAssignmentsResources = {
+    fr: { roles: { assignmentsTitle: 'Utilisateurs par Rôle', noAssignments: 'Aucune attribution de rôle trouvée.' }, common: { none: 'Aucun' } },
+    en: { roles: { assignmentsTitle: 'Users by Role', noAssignments: 'No role assignments found.' }, common: { none: 'None' } },
+    ar: { roles: { assignmentsTitle: 'المستخدمون حسب الدور', noAssignments: 'لا توجد إسنادات أدوار.' }, common: { none: 'لا يوجد' } },
+}
+
+for (const [lng, res] of Object.entries(roleAssignmentsResources)) {
+    i18n.addResourceBundle(lng, 'translation', res as any, true, false)
+}
 
 export default function RoleAssignments({ attributions }: { attributions: RoleAttribution[] }) {
+    const { t } = useTranslation()
     const grouped = useMemo(() => {
         const groups: Record<string, RoleAttribution[]> = {}
         for (const attr of attributions) {
-            const roleName = attr.role || 'Sans nom'
+            const roleName = attr.role || t('common.none')
             if (!groups[roleName]) {
                 groups[roleName] = []
             }
@@ -19,7 +32,7 @@ export default function RoleAssignments({ attributions }: { attributions: RoleAt
 
     return (
         <div className="mt-5">
-            <h4 className="mb-3 border-bottom pb-2">Utilisateurs par Rôle</h4>
+            <h4 className="mb-3 border-bottom pb-2">{t('roles.assignmentsTitle')}</h4>
             <div className="row g-4">
                 {sortedRoles.map(role => (
                     <div key={role} className="col-12 col-md-6 col-lg-4">
@@ -62,7 +75,7 @@ export default function RoleAssignments({ attributions }: { attributions: RoleAt
                 {sortedRoles.length === 0 && (
                     <div className="col-12">
                         <div className="text-center text-muted py-4">
-                            Aucune attribution de rôle trouvée.
+                            {t('roles.noAssignments')}
                         </div>
                     </div>
                 )}
