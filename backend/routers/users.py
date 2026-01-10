@@ -4,7 +4,7 @@ import logging
 import re
 from datetime import datetime
 
-from dependencies import get_cursor, get_current_user
+from dependencies import get_cursor, get_current_user, has_role
 from models import UserCreate, UserAdminUpdate, UserUpdate
 from utils import parse_create_request, parse_update_request, generate_username_logic
 from auth_utils import hash_password
@@ -20,20 +20,71 @@ def get_user_by_id(user_id: int, cursor = Depends(get_cursor), current_user: dic
     user = cursor.fetchone()
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    # Authorization: admin can view any; admingroup can view only within same father/mother group; others forbidden
+    if not has_role(cursor, current_user["id"], "admin"):
+        if has_role(cursor, current_user["id"], "admingroup"):
+            fid = current_user.get("id_father")
+            mid = current_user.get("id_mother")
+            same_group = False
+            if fid is not None and (user.get("id_father") == fid or user.get("id") == fid):
+                same_group = True
+            if mid is not None and (user.get("id_mother") == mid or user.get("id") == mid):
+                same_group = True
+            if not same_group and user.get("id") != current_user.get("id"):
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+        else:
+            # Regular users cannot view other users by id
+            if user.get("id") != current_user.get("id"):
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
     user.pop("password", None)
     return user
 
 @router.get("/users")
 def get_members(cursor = Depends(get_cursor), current_user: dict = Depends(get_current_user)):
-    cursor.execute(
-        """
-        SELECT u.*, r.id AS role_id, r.role AS role_name
-        FROM users u
-        LEFT JOIN role_attribution ra ON ra.users_id = u.id
-        LEFT JOIN roles r ON r.id = ra.roles_id
-        ORDER BY u.id, r.id
-        """
-    )
+    # Admin sees all; group admin sees only users sharing same father or same mother; include the parents themselves as well
+    is_admin = has_role(cursor, current_user["id"], "admin")
+    is_group_admin = has_role(cursor, current_user["id"], "admingroup")
+    if is_admin:
+        cursor.execute(
+            """
+            SELECT u.*, r.id AS role_id, r.role AS role_name
+            FROM users u
+            LEFT JOIN role_attribution ra ON ra.users_id = u.id
+            LEFT JOIN roles r ON r.id = ra.roles_id
+            ORDER BY u.id, r.id
+            """
+        )
+    elif is_group_admin:
+        fid = current_user.get("id_father")
+        mid = current_user.get("id_mother")
+        cursor.execute(
+            """
+            SELECT u.*, r.id AS role_id, r.role AS role_name
+            FROM users u
+            LEFT JOIN role_attribution ra ON ra.users_id = u.id
+            LEFT JOIN roles r ON r.id = ra.roles_id
+            WHERE (
+                (%s IS NOT NULL AND (u.id_father = %s OR u.id = %s))
+                OR (%s IS NOT NULL AND (u.id_mother = %s OR u.id = %s))
+                OR u.id = %s
+            )
+            ORDER BY u.id, r.id
+            """,
+            (fid, fid, fid, mid, mid, mid, current_user.get("id")),
+        )
+    else:
+        # Regular users see only themselves
+        cursor.execute(
+            """
+            SELECT u.*, r.id AS role_id, r.role AS role_name
+            FROM users u
+            LEFT JOIN role_attribution ra ON ra.users_id = u.id
+            LEFT JOIN roles r ON r.id = ra.roles_id
+            WHERE u.id = %s
+            ORDER BY u.id, r.id
+            """,
+            (current_user.get("id"),),
+        )
     rows = cursor.fetchall()
     users_by_id = {}
     for row in rows:
@@ -86,6 +137,15 @@ async def create_user(request: Request, cursor = Depends(get_cursor), current_us
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Le père et la mère doivent être différents")
 
     default_hashed = hash_password(settings.user_password_default)
+    # Authorization for creation: admin anytime; group admin only within their group; others forbidden
+    if not has_role(cursor, current_user["id"], "admin"):
+        if has_role(cursor, current_user["id"], "admingroup"):
+            fid = current_user.get("id_father")
+            mid = current_user.get("id_mother")
+            if not ((fid is not None and body.id_father == fid) or (mid is not None and body.id_mother == mid)):
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cannot create user outside your group")
+        else:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
     
     cursor.execute("SELECT COALESCE(MAX(id), 0) + 1 AS next_id FROM users")
     row_next = cursor.fetchone()
@@ -161,6 +221,23 @@ async def update_user_by_id(user_id: int, request: Request, cursor = Depends(get
     row_curr = cursor.fetchone()
     if not row_curr:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    # Authorization: admin ok; group admin only if target is in same group; others forbidden
+    if not has_role(cursor, current_user["id"], "admin"):
+        if has_role(cursor, current_user["id"], "admingroup"):
+            fid = current_user.get("id_father")
+            mid = current_user.get("id_mother")
+            same_group = False
+            if fid is not None and (row_curr.get("id_father") == fid or row_curr.get("id") == fid):
+                same_group = True
+            if mid is not None and (row_curr.get("id_mother") == mid or row_curr.get("id") == mid):
+                same_group = True
+            if not same_group and row_curr.get("id") != current_user.get("id"):
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+        else:
+            # Regular users can only update themselves via /user
+            if row_curr.get("id") != current_user.get("id"):
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
         
     curr_father = row_curr.get("id_father")
     curr_mother = row_curr.get("id_mother")
@@ -217,6 +294,24 @@ async def update_user_by_id(user_id: int, request: Request, cursor = Depends(get
 
 @router.delete("/users/{user_id}")
 def delete_user_by_id(user_id: int, cursor = Depends(get_cursor), current_user: dict = Depends(get_current_user)):
+    # Authorization: admin ok; group admin only if target in same group; others forbidden
+    cursor.execute("SELECT id, id_father, id_mother FROM users WHERE id = %s", (user_id,))
+    target = cursor.fetchone()
+    if not target:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    if not has_role(cursor, current_user["id"], "admin"):
+        if has_role(cursor, current_user["id"], "admingroup"):
+            fid = current_user.get("id_father")
+            mid = current_user.get("id_mother")
+            same_group = False
+            if fid is not None and (target.get("id_father") == fid or target.get("id") == fid):
+                same_group = True
+            if mid is not None and (target.get("id_mother") == mid or target.get("id") == mid):
+                same_group = True
+            if not same_group and target.get("id") != current_user.get("id"):
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+        else:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
     cursor.execute(
         "UPDATE users SET isactive = %s, updatedby = %s, updatedat = CURRENT_TIMESTAMP WHERE id = %s",
         (0, current_user["id"], user_id),

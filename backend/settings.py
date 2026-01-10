@@ -11,15 +11,17 @@ class Settings:
         self.env = os.environ["ENV"]
 
         # Database (AWS / Local)
-        self.aws_db_host = os.getenv("AWS_DB_HOST")
-        self.aws_db_user = os.getenv("AWS_DB_USER")
-        self.aws_db_pass = os.getenv("AWS_DB_PASS")
-        self.aws_db_name = os.getenv("AWS_DB_NAME")
+        self.online_db_host = os.getenv("ONLINE_DB_HOST")
+        self.online_db_user = os.getenv("ONLINE_DB_USER")
+        self.online_db_pass = os.getenv("ONLINE_DB_PASS")
+        self.online_db_name = os.getenv("ONLINE_DB_NAME")
+        self.online_db_port = int(os.getenv("ONLINE_DB_PORT"))
 
         self.local_db_host = os.getenv("LOCAL_DB_HOST")
         self.local_db_user = os.getenv("LOCAL_DB_USER")
         self.local_db_pass = os.getenv("LOCAL_DB_PASS")
         self.local_db_name = os.getenv("LOCAL_DB_NAME")
+        self.local_db_port = int(os.getenv("LOCAL_DB_PORT", "3306"))
 
         # JWT (required)
         self.jwt_secret = os.environ["JWT_SECRET"]
@@ -53,10 +55,11 @@ class Settings:
     def get_db_config(self):
         if self.env == "prod":
             return {
-                "host": self.aws_db_host,
-                "user": self.aws_db_user,
-                "password": self.aws_db_pass,
-                "database": self.aws_db_name,
+                "host": self.online_db_host,
+                "user": self.online_db_user,
+                "password": self.online_db_pass,
+                "database": self.online_db_name,
+                "port": self.online_db_port,
                 "connect_timeout": 5,
             }
         else:
@@ -65,6 +68,8 @@ class Settings:
                 "user": self.local_db_user,
                 "password": self.local_db_pass,
                 "database": self.local_db_name,
+                "port": self.local_db_port,
+                "connect_timeout": 5,
             }
 
 

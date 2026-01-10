@@ -83,3 +83,27 @@ def get_current_user(request: Request, token: Optional[str] = Depends(oauth2_sch
         raise credentials_exception
         
     return user
+
+
+def get_user_roles(cursor, user_id: int):
+    try:
+        cursor.execute(
+            """
+            SELECT r.role
+            FROM role_attribution ra
+            JOIN roles r ON r.id = ra.roles_id
+            WHERE ra.users_id = %s
+            """,
+            (user_id,),
+        )
+        rows = cursor.fetchall() or []
+        return [str(r.get("role")).lower() for r in rows if r and r.get("role") is not None]
+    except Exception:
+        logger.exception("[auth] Failed to fetch user roles")
+        return []
+
+
+def has_role(cursor, user_id: int, role_name: str) -> bool:
+    roles = get_user_roles(cursor, user_id)
+    return role_name.lower() in roles
+

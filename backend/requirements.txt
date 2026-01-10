@@ -1,5 +1,5 @@
 fastapi
-uvicorn
+uvicorn[standard]
 mangum
 mysql-connector-python
 python-dotenv
@@ -9,3 +9,4 @@ bcrypt==3.2.2
 python-jose[cryptography]
 pydantic[email]
 boto3
+psutil
