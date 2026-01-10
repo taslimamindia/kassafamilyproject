@@ -30,7 +30,13 @@ for (const [lng, res] of Object.entries(usersTabResources)) {
     i18n.addResourceBundle(lng, 'translation', res as any, true, false)
 }
 
-export default function UsersTab() {
+export default function UsersTab({
+    userFormOptions,
+}: {
+    userFormOptions?: {
+        allowedRoleNames?: string[]
+    }
+} = {}) {
     const [users, setUsers] = useState<User[]>([])
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState<string | null>(null)
@@ -103,6 +109,7 @@ export default function UsersTab() {
                         initial={currentUser ?? undefined}
                         onSaved={onSaved}
                         onCancel={cancelEdit}
+                        allowedRoleNames={userFormOptions?.allowedRoleNames}
                     />
                 )}
             </Modal>

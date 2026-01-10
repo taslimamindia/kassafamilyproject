@@ -11,11 +11,13 @@ export default function UserForm({
     initial,
     onSaved,
     onCancel,
+    allowedRoleNames,
 }: {
     mode: 'create' | 'edit'
     initial?: Partial<User>
     onSaved: (user: User) => void
     onCancel: () => void
+    allowedRoleNames?: string[]
 }) {
     const [form, setForm] = useState<Partial<User>>({
         username: initial?.username ?? '',
@@ -53,7 +55,18 @@ export default function UserForm({
                 setAllRoles(roles)
                 if (mode === 'edit' && initial?.id) {
                     const current = await getRolesForUser(initial.id)
-                    setSelectedRoleIds(current.map(r => r.id))
+                    // If restricted, pre-select only allowed ones
+                    const currentIds = current.map(r => r.id)
+                    if (allowedRoleNames && allowedRoleNames.length > 0) {
+                        const allowedIds = new Set(
+                            roles
+                                .filter(r => allowedRoleNames.map(n => n.toLowerCase()).includes(String(r.role).toLowerCase()))
+                                .map(r => r.id)
+                        )
+                        setSelectedRoleIds(currentIds.filter(id => allowedIds.has(id)))
+                    } else {
+                        setSelectedRoleIds(currentIds)
+                    }
                 }
             } catch {
                 // ignore errors for roles loading
@@ -145,7 +158,15 @@ export default function UserForm({
                     })
                 }
                 // Assign selected roles (filter out any stale/invalid role ids)
-                const validRoleIds = selectedRoleIds.filter(rid => allRoles.some(r => r.id === rid))
+                let validRoleIds = selectedRoleIds.filter(rid => allRoles.some(r => r.id === rid))
+                if (allowedRoleNames && allowedRoleNames.length > 0) {
+                    const allowedIds = new Set(
+                        allRoles
+                            .filter(r => allowedRoleNames.map(n => n.toLowerCase()).includes(String(r.role).toLowerCase()))
+                            .map(r => r.id)
+                    )
+                    validRoleIds = validRoleIds.filter(id => allowedIds.has(id))
+                }
                 await Promise.all(validRoleIds.map(rid => assignRoleToUser(created.id, rid)))
                 onSaved(created)
             } else {
@@ -179,10 +200,19 @@ export default function UserForm({
                         isfirstlogin: isFirstLogin ? 1 : 0,
                     })
                 }
-                // Update role assignments (diff)
+                // Update role assignments (diff) – operate only on allowed roles if restricted
                 const current = await getRolesForUser(id)
-                const currentIds = new Set(current.map(r => r.id))
-                const desiredIds = new Set(selectedRoleIds)
+                let currentIds = new Set(current.map(r => r.id))
+                let desiredIds = new Set(selectedRoleIds)
+                if (allowedRoleNames && allowedRoleNames.length > 0) {
+                    const allowedIds = new Set(
+                        allRoles
+                            .filter(r => allowedRoleNames.map(n => n.toLowerCase()).includes(String(r.role).toLowerCase()))
+                            .map(r => r.id)
+                    )
+                    currentIds = new Set([...currentIds].filter(id2 => allowedIds.has(id2)))
+                    desiredIds = new Set([...desiredIds].filter(id2 => allowedIds.has(id2)))
+                }
                 // Remove roles not desired
                 await Promise.all([...currentIds].filter(rid => !desiredIds.has(rid)).map(rid => removeRoleFromUser(id, rid)))
                 // Add roles newly desired
@@ -294,7 +324,10 @@ export default function UserForm({
                     <div className="col-12">
                         <label className="form-label">Rôles</label>
                         <div className="d-flex flex-wrap gap-3">
-                            {allRoles.map(role => (
+                            {(allowedRoleNames && allowedRoleNames.length > 0
+                                ? allRoles.filter(r => allowedRoleNames.map(n => n.toLowerCase()).includes(String(r.role).toLowerCase()))
+                                : allRoles
+                            ).map(role => (
                                 <div key={role.id} className="form-check">
                                     <input
                                         className="form-check-input"

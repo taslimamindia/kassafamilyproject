@@ -59,6 +59,7 @@ function Header() {
     const navigate = useNavigate()
     const [isAuth, setIsAuth] = useState<boolean | null>(null)
     const [isAdmin, setIsAdmin] = useState<boolean>(false)
+    const [isGroupAdmin, setIsGroupAdmin] = useState<boolean>(false)
     const { t } = useTranslation()
 
     useEffect(() => {
@@ -72,15 +73,19 @@ function Header() {
                     try {
                         const user = await getCurrentUser()
                         const roles = await getRolesForUser(user.id)
-                        setIsAdmin(roles.some(r => r.role?.toLowerCase() === 'admin'))
+                        const names = roles.map(r => (r.role || '').toLowerCase())
+                        setIsAdmin(names.includes('admin'))
+                        setIsGroupAdmin(names.includes('admingroup') || names.includes('admin'))
                     } catch {
                         setIsAdmin(false)
+                        setIsGroupAdmin(false)
                     }
                 } else {
                     setIsAdmin(false)
+                    setIsGroupAdmin(false)
                 }
             } catch {
-                if (mounted) { setIsAuth(false); setIsAdmin(false) }
+                if (mounted) { setIsAuth(false); setIsAdmin(false); setIsGroupAdmin(false) }
             }
         }
         // Initial check
@@ -131,6 +136,14 @@ function Header() {
                                 <NavLink to="/admin" className={({ isActive }) => `nav-link d-flex align-items-center gap-2 ${isActive ? 'active' : ''}`}>
                                     <i className="bi bi-shield-lock" aria-hidden="true"></i>
                                     Admin
+                                </NavLink>
+                            </li>
+                        )}
+                        {isAuth && isGroupAdmin && (
+                            <li className="nav-item">
+                                <NavLink to="/admingroup" className={({ isActive }) => `nav-link d-flex align-items-center gap-2 ${isActive ? 'active' : ''}`}>
+                                    <i className="bi bi-people" aria-hidden="true"></i>
+                                    Admin de Groupe
                                 </NavLink>
                             </li>
                         )}

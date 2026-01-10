@@ -2,14 +2,15 @@ import './HomeAdmin.css'
 import { useState } from 'react'
 import UsersTab from './components/UsersTab.tsx'
 import RolesTab from './components/RolesTab.tsx'
+import MemoryTab from './components/MemoryTab.tsx'
 import { useTranslation } from 'react-i18next'
 import i18n from '../../i18n'
 
 // Localized dictionary for this component
 const homeAdminResources = {
-    fr: { admin: { space: 'Espace Administrateur', tabs: { users: 'Utilisateurs', roles: 'Rôles' } } },
-    en: { admin: { space: 'Admin Area', tabs: { users: 'Users', roles: 'Roles' } } },
-    ar: { admin: { space: 'منطقة الإدارة', tabs: { users: 'المستخدمون', roles: 'الأدوار' } } },
+    fr: { admin: { space: 'Espace Administrateur', tabs: { users: 'Utilisateurs', roles: 'Rôles', memory: 'Mémoire' } } },
+    en: { admin: { space: 'Admin Area', tabs: { users: 'Users', roles: 'Roles', memory: 'Memory' } } },
+    ar: { admin: { space: 'منطقة الإدارة', tabs: { users: 'المستخدمون', roles: 'الأدوار', memory: 'الذاكرة' } } },
 }
 
 for (const [lng, res] of Object.entries(homeAdminResources)) {
@@ -17,7 +18,7 @@ for (const [lng, res] of Object.entries(homeAdminResources)) {
 }
 
 export default function HomeAdmin() {
-    const [activeTab, setActiveTab] = useState<'users' | 'roles'>('users')
+    const [activeTab, setActiveTab] = useState<'users' | 'roles' | 'memory'>('users')
     const { t } = useTranslation()
 
     return (
@@ -47,11 +48,22 @@ export default function HomeAdmin() {
                         {t('admin.tabs.roles')}
                     </button>
                 </li>
+                <li className="nav-item" role="presentation">
+                    <button
+                        className={`nav-link ${activeTab === 'memory' ? 'active' : ''}`}
+                        onClick={() => setActiveTab('memory')}
+                        role="tab"
+                        aria-selected={activeTab === 'memory'}
+                    >
+                        {t('admin.tabs.memory')}
+                    </button>
+                </li>
             </ul>
 
             <div>
                 {activeTab === 'users' && <UsersTab />}
                 {activeTab === 'roles' && <RolesTab />}
+                {activeTab === 'memory' && <MemoryTab />}
             </div>
         </div>
     )
