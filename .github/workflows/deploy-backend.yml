@@ -24,60 +24,31 @@ jobs:
           username: ${{ secrets.BACKEND_SSH_USER }}
           key: ${{ secrets.BACKEND_SSH_PRIVATE_KEY }}
           port: 22
+          # On déclare quelles variables d'environnement l'action doit transférer au script SSH
           envs: >-
-            BACKEND_ENV,
-            BACKEND_ONLINE_DB_HOST,
-            BACKEND_ONLINE_DB_USER,
-            BACKEND_ONLINE_DB_PASS,
-            BACKEND_ONLINE_DB_NAME,
-            BACKEND_ONLINE_DB_PORT,
-            BACKEND_JWT_SECRET,
-            BACKEND_JWT_ALGORITHM,
-            BACKEND_JWT_EXP_MINUTES,
-            BACKEND_PUBLIC_PATHS,
-            BACKEND_USER_PASSWORD_DEFAULT,
-            BACKEND_AWS_S3_BUCKET,
-            BACKEND_AWS_REGION,
-            BACKEND_AWS_ACCESS_KEY_ID,
+            BACKEND_ENV,BACKEND_LOCAL_DB_HOST,BACKEND_LOCAL_DB_USER,
+            BACKEND_LOCAL_DB_PASS,BACKEND_LOCAL_DB_NAME,BACKEND_LOCAL_DB_PORT,
+            BACKEND_JWT_SECRET,BACKEND_JWT_ALGORITHM,BACKEND_JWT_EXP_MINUTES,
+            BACKEND_PUBLIC_PATHS,BACKEND_USER_PASSWORD_DEFAULT,
+            BACKEND_AWS_S3_BUCKET,BACKEND_AWS_REGION,BACKEND_AWS_ACCESS_KEY_ID,
             BACKEND_AWS_SECRET_ACCESS_KEY
-        env:
-          BACKEND_ENV: "local"
-          BACKEND_ONLINE_DB_HOST: ${{ secrets.BACKEND_ONLINE_DB_HOST }}
-          BACKEND_ONLINE_DB_USER: ${{ secrets.BACKEND_ONLINE_DB_USER }}
-          BACKEND_ONLINE_DB_PASS: ${{ secrets.BACKEND_ONLINE_DB_PASS }}
-          BACKEND_ONLINE_DB_NAME: ${{ secrets.BACKEND_ONLINE_DB_NAME }}
-          BACKEND_ONLINE_DB_PORT: ${{ secrets.BACKEND_ONLINE_DB_PORT }}
-          BACKEND_JWT_SECRET: ${{ secrets.JWT_SECRET }}
-          BACKEND_JWT_ALGORITHM: "HS256"
-          BACKEND_JWT_EXP_MINUTES: 1440
-          BACKEND_PUBLIC_PATHS: "/login,/register,/docs"
-          BACKEND_USER_PASSWORD_DEFAULT: ${{ secrets.USER_PWD_DEFAULT }}
-          BACKEND_AWS_S3_BUCKET: ${{ secrets.AWS_S3_BUCKET }}
-          BACKEND_AWS_REGION: ${{ secrets.AWS_REGION }}
-          BACKEND_AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          BACKEND_AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          
+          # LE SCRIPT DOIT ÊTRE ICI (DANS WITH)
           script: |
-            # 1. Aller dans le dossier parent
-            cd /home/ubuntu/kassa
+            # 1. Préparation des dossiers
+            mkdir -p /home/ubuntu/kassa/api_famille_kassatech_org
+            cd /home/ubuntu/kassa/api_famille_kassatech_org
 
-            # 2. Vérifier si le dossier api_famille_kassatech_org est un dépôt Git
-            if [ ! -d "api_famille_kassatech_org/.git" ]; then
-              echo "Le dossier n'est pas un dépôt Git. Initialisation..."
-              # On clone temporairement ou on initialise
-              # Remplacez l'URL par votre URL de dépôt (HTTPS ou SSH configuré sur l'instance)
-              git clone https://github.com/VOTRE_NOM/VOTRE_REPO.git temp_repo
-              cp -r temp_repo/* api_famille_kassatech_org/
-              cp -r temp_repo/.git api_famille_kassatech_org/
-              rm -rf temp_repo
+            # 2. Initialisation ou Mise à jour du code
+            if [ ! -d ".git" ]; then
+              echo "Initialisation du dépôt..."
+              git clone https://github.com/${{ github.repository }}.git .
+            else
+              echo "Mise à jour du dépôt..."
+              git fetch origin main
+              git reset --hard origin/main
             fi
 
-            # 3. Entrer dans le dossier et forcer la mise à jour
-            cd api_famille_kassatech_org
-            git fetch origin main
-            git reset --hard origin/main  # Force l'alignement avec GitHub
-
-            # 4. Création du fichier .env
+            # 3. Création du fichier .env
             cat <<EOF > .env
             BACKEND_ENV=$BACKEND_ENV
             BACKEND_LOCAL_DB_HOST=$BACKEND_LOCAL_DB_HOST
@@ -96,12 +67,38 @@ jobs:
             BACKEND_AWS_SECRET_ACCESS_KEY=$BACKEND_AWS_SECRET_ACCESS_KEY
             EOF
 
-            # 5. Dépendances et Redémarrage
+            # 4. Mise à jour des dépendances
             cd /home/ubuntu/kassa
-            source venv/bin/activate
-            pip install -r requirements.txt
+            if [ -f "venv/bin/activate" ]; then
+              source venv/bin/activate
+              pip install -r requirements.txt
+            else
+              echo "Erreur: Virtualenv non trouvé dans /home/ubuntu/kassa/venv"
+              exit 1
+            fi
+
+            # 5. Redémarrage du service
             sudo systemctl restart fastapi_famille_kassa.service
             
-            # 6. Vérification finale pour le log GitHub
-            echo "Contenu du dossier après déploiement :"
-            ls -la api_famille_kassatech_org/
+            # 6. Vérification
+            echo "Statut du service :"
+            sudo systemctl status fastapi_famille_kassa.service --no-pager
+            echo "Déploiement terminé avec succès."
+
+        # DEFINITION DES VARIABLES (POUR LE TRANSFERT VERS ENVS CI-DESSUS)
+        env:
+          BACKEND_ENV: "local"
+          BACKEND_LOCAL_DB_HOST: ${{ secrets.BACKEND_ONLINE_DB_HOST }}
+          BACKEND_LOCAL_DB_USER: ${{ secrets.BACKEND_ONLINE_DB_USER }}
+          BACKEND_LOCAL_DB_PASS: ${{ secrets.BACKEND_ONLINE_DB_PASS }}
+          BACKEND_LOCAL_DB_NAME: ${{ secrets.BACKEND_ONLINE_DB_NAME }}
+          BACKEND_LOCAL_DB_PORT: ${{ secrets.BACKEND_ONLINE_DB_PORT }}
+          BACKEND_JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          BACKEND_JWT_ALGORITHM: "HS256"
+          BACKEND_JWT_EXP_MINUTES: 1440
+          BACKEND_PUBLIC_PATHS: "/login,/register,/docs"
+          BACKEND_USER_PASSWORD_DEFAULT: ${{ secrets.USER_PWD_DEFAULT }}
+          BACKEND_AWS_S3_BUCKET: ${{ secrets.AWS_S3_BUCKET }}
+          BACKEND_AWS_REGION: ${{ secrets.AWS_REGION }}
+          BACKEND_AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          BACKEND_AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
