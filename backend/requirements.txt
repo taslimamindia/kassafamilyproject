@@ -10,3 +10,5 @@ python-jose[cryptography]
 pydantic[email]
 boto3
 psutil
+sshtunnel
+paramiko<3
