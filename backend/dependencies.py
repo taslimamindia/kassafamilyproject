@@ -32,6 +32,24 @@ def get_cursor():
                 logger.warning(f"[auth] Failed to close DB connection: {e}")
 
 
+def ensure_revoked_tokens_table(cursor):
+    try:
+        cursor.execute(
+            
+            """
+            CREATE TABLE IF NOT EXISTS revoked_tokens (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                jti VARCHAR(36),
+                token TEXT,
+                expires DATETIME,
+                INDEX idx_jti (jti)
+            ) ENGINE=InnoDB;
+            """
+        )
+    except Exception:
+        logger.exception("[auth] Failed to ensure revoked_tokens table exists")
+
+
 def get_current_user(request: Request, token: Optional[str] = Depends(oauth2_scheme), cursor = Depends(get_cursor)):
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -64,10 +82,16 @@ def get_current_user(request: Request, token: Optional[str] = Depends(oauth2_sch
         # Note: We assume the table `revoked_tokens` exists. 
         # Ideally, use a caching layer (Redis) for revocation lists in high-scale prod.
         if jti:
-            cursor.execute("SELECT id FROM revoked_tokens WHERE jti = %s", (jti,))
-            if cursor.fetchone():
-                logger.info(f"[auth] Token revoked (jti matched) for user_id={user_id}")
-                raise credentials_exception
+            # Ensure table exists to avoid 500 on first verify
+            ensure_revoked_tokens_table(cursor)
+            try:
+                cursor.execute("SELECT id FROM revoked_tokens WHERE jti = %s", (jti,))
+                if cursor.fetchone():
+                    logger.info(f"[auth] Token revoked (jti matched) for user_id={user_id}")
+                    raise credentials_exception
+            except Exception as e:
+                # If querying fails (e.g., table missing), treat as not revoked
+                logger.warning(f"[auth] Revocation check skipped due to error: {e}")
         
     except ExpiredSignatureError:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token expired")

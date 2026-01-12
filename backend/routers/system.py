@@ -133,40 +133,150 @@ async def memory_ws(websocket: WebSocket):
 def setup_database(current_user: dict = Depends(get_current_user)):
     conn = get_db_connection(autocommit=False)
     cursor = conn.cursor()
-    try:        
+    try:
         # Insert father (ID 1)
-        sql_father = "INSERT INTO users (id, firstname, lastname, username, password) VALUES (1, %s, %s, %s, %s) ON DUPLICATE KEY UPDATE id=id"
-        cursor.execute(sql_father, ("Kassa", "Famille", "kassa", hash_password(settings.user_password_default)))
-        
+        sql_father = (
+            "INSERT INTO users (id, firstname, lastname, username, password, isfirstlogin) "
+            "VALUES (1, %s, %s, %s, %s, %s) "
+            "ON DUPLICATE KEY UPDATE id=id"
+        )
+        cursor.execute(
+            sql_father,
+            (
+                "Kassa",
+                "Famille",
+                "kassa",
+                hash_password(settings.user_password_default),
+                0,
+            ),
+        )
+
         # Insert admin (ID 2)
-        sql_admin = "INSERT INTO users (id, firstname, lastname, username, password, email, telephone, birthday) VALUES (2, %s, %s, %s, %s, %s, %s, %s) ON DUPLICATE KEY UPDATE id=id"
+        sql_admin = (
+            "INSERT INTO users (id, firstname, lastname, username, password, email, telephone, birthday, isfirstlogin, isactive) "
+            "VALUES (2, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
+            "ON DUPLICATE KEY UPDATE id=id"
+        )
         cursor.execute(
             sql_admin,
-            ("admin", "admin", settings.admin_username, hash_password(settings.admin_password), settings.admin_email, settings.admin_telephone, settings.admin_birthday),
+            (
+                "admin",
+                "admin",
+                settings.admin_username,
+                hash_password(settings.admin_password),
+                settings.admin_email,
+                settings.admin_telephone,
+                settings.admin_birthday,
+                0,
+                1,
+            ),
         )
-            
+
         children = [
-            (3, "Thierno Mahamoudou", "Barry", "thierno", hash_password(settings.user_password_default), 1),
-            (4, "Mamadou Kindy", "Barry", "mamadou", hash_password(settings.user_password_default), 1),
+            (
+                3,
+                "Thierno Mahamoudou",
+                "Barry",
+                "thierno",
+                hash_password(settings.user_password_default),
+                1,
+                0,
+            ),
+            (
+                4,
+                "Mamadou Kindy",
+                "Barry",
+                "mamadou",
+                hash_password(settings.user_password_default),
+                1,
+                0,
+            ),
         ]
-        sql_child = "INSERT INTO users (id, firstname, lastname, username, password, id_father) VALUES (%s, %s, %s, %s, %s, %s) ON DUPLICATE KEY UPDATE id=id"
+        sql_child = (
+            "INSERT INTO users (id, firstname, lastname, username, password, id_father, isfirstlogin) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s) ON DUPLICATE KEY UPDATE id=id"
+        )
         cursor.executemany(sql_child, children)
-        
+
         # Roles
-        cursor.execute("INSERT INTO roles (id, role) VALUES (1, 'admin') ON DUPLICATE KEY UPDATE role='admin'")
-        cursor.execute("INSERT INTO roles (id, role) VALUES (2, 'user') ON DUPLICATE KEY UPDATE role='user'")
-        cursor.execute("INSERT INTO roles (id, role) VALUES (3, 'guest') ON DUPLICATE KEY UPDATE role='guest'")
+        cursor.execute(
+            "INSERT INTO roles (id, role) VALUES (1, 'admin') "
+            "ON DUPLICATE KEY UPDATE role='admin'"
+        )
+        cursor.execute(
+            "INSERT INTO roles (id, role) VALUES (2, 'user') "
+            "ON DUPLICATE KEY UPDATE role='user'"
+        )
+        cursor.execute(
+            "INSERT INTO roles (id, role) VALUES (3, 'guest') "
+            "ON DUPLICATE KEY UPDATE role='guest'"
+        )
+        cursor.execute(
+            "INSERT INTO roles (id, role) VALUES (4, 'norole') "
+            "ON DUPLICATE KEY UPDATE role='norole'"
+        )
+        cursor.execute(
+            "INSERT INTO roles (id, role) VALUES (5, 'admingroup') "
+            "ON DUPLICATE KEY UPDATE role='admingroup'"
+        )
+
+        # Create users for each role
+        # Guest user (ID 5)
+        sql_role_user = (
+            "INSERT INTO users (id, firstname, lastname, username, password, isfirstlogin) "
+            "VALUES (%s, %s, %s, %s, %s, %s) ON DUPLICATE KEY UPDATE id=id"
+        )
+        cursor.execute(
+            sql_role_user,
+            (
+                5,
+                "Guest",
+                "User",
+                "guest",
+                hash_password(settings.user_password_default),
+                0,
+            ),
+        )
+        # Norole user (ID 6)
+        cursor.execute(
+            sql_role_user,
+            (
+                6,
+                "No",
+                "Role",
+                "norole",
+                hash_password(settings.user_password_default),
+                0,
+            ),
+        )
 
         # Role assignments
         # Admin gets everything
         for rid in (1, 2, 3):
-            cursor.execute("INSERT IGNORE INTO role_attribution (users_id, roles_id) VALUES (2, %s)", (rid,))
+            cursor.execute(
+                "INSERT IGNORE INTO role_attribution (users_id, roles_id) VALUES (2, %s)",
+                (rid,),
+            )
 
-        # Others get user
+        # No user add norole for kassa, father and mother
         for uid in (1, 3, 4):
-            cursor.execute("INSERT IGNORE INTO role_attribution (users_id, roles_id) VALUES (%s, 2)", (uid,))
-        
+            cursor.execute(
+                "INSERT IGNORE INTO role_attribution (users_id, roles_id) VALUES (%s, 4)",
+                (uid,),
+            )
+
+        # Guest gets guest role
+        cursor.execute(
+            "INSERT IGNORE INTO role_attribution (users_id, roles_id) VALUES (5, 3)"
+        )
+
+        # Norole gets norole role
+        cursor.execute(
+            "INSERT IGNORE INTO role_attribution (users_id, roles_id) VALUES (6, 4)"
+        )
+
         conn.commit()
+
         return {"status": "Success", "message": "Ensure initial data exists"}
     
     except Exception as e:

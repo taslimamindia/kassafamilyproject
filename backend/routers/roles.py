@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 import logging
 import mysql.connector
 
@@ -71,17 +71,27 @@ def delete_role(role_id: int, cursor = Depends(get_cursor), current_user: dict =
     return {"status": "deleted", "id": role_id}
 
 @router.get("/role-attributions")
-def list_role_attributions(cursor = Depends(get_cursor), current_user: dict = Depends(get_current_user)):
+def list_role_attributions(request: Request, cursor = Depends(get_cursor), current_user: dict = Depends(get_current_user)):
+    # Optional filter: status (active/inactive/all) — defaults to active
+    qp = request.query_params
+    status = (qp.get("status") or "active").lower()
+    where = ""
+    vals: list = []
+    if status in {"active", "inactive"}:
+        where = "WHERE u.isactive = %s"
+        vals.append(1 if status == "active" else 0)
     cursor.execute(
-        """
+        f"""
         SELECT ra.id, ra.users_id, ra.roles_id,
             u.username, u.firstname, u.lastname, u.image_url,
             r.role
         FROM role_attribution ra
         JOIN users u ON u.id = ra.users_id
         JOIN roles r ON r.id = ra.roles_id
+        {where}
         ORDER BY ra.id
-        """
+        """,
+        tuple(vals)
     )
     return cursor.fetchall()
 

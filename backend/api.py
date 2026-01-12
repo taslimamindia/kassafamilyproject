@@ -2,10 +2,33 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from mangum import Mangum
 import logging
+from contextlib import asynccontextmanager
 
 from routers import auth, users, roles, system
+from database import get_db_connection
+from dependencies import ensure_revoked_tokens_table
 
-app = FastAPI()
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        ensure_revoked_tokens_table(cursor)
+        try:
+            conn.commit()
+        except Exception:
+            logging.exception("[lifespan] Commit failed after ensuring revoked_tokens table")
+        yield
+    finally:
+        try:
+            cursor.close()
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                logging.exception("[lifespan] Failed to close DB connection")
+
+app = FastAPI(lifespan=lifespan)
 
 # Basic logging configuration
 logging.basicConfig(level=logging.INFO)

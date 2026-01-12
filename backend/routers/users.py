@@ -40,24 +40,47 @@ def get_user_by_id(user_id: int, cursor = Depends(get_cursor), current_user: dic
     return user
 
 @router.get("/users")
-def get_members(cursor = Depends(get_cursor), current_user: dict = Depends(get_current_user)):
+def get_members(request: Request, cursor = Depends(get_cursor), current_user: dict = Depends(get_current_user)):
     # Admin sees all; group admin sees only users sharing same father or same mother; include the parents themselves as well
     is_admin = has_role(cursor, current_user["id"], "admin")
     is_group_admin = has_role(cursor, current_user["id"], "admingroup")
+    # Query filters: status (active/inactive/all), first_login (yes/no/all), q (search)
+    qp = request.query_params
+    status = (qp.get("status") or "active").lower()
+    first_login = (qp.get("first_login") or "all").lower()
+    q = qp.get("q") or None
+
+    extra_where = []
+    extra_vals = []
+    if status in {"active", "inactive"}:
+        extra_where.append("u.isactive = %s")
+        extra_vals.append(1 if status == "active" else 0)
+    # first_login filter
+    if first_login in {"yes", "no"}:
+        extra_where.append("u.isfirstlogin = %s")
+        extra_vals.append(1 if first_login == "yes" else 0)
+    # search filter across common fields
+    if q:
+        like = f"%{q}%"
+        extra_where.append("(CAST(u.id AS CHAR) LIKE %s OR u.firstname LIKE %s OR u.lastname LIKE %s OR u.username LIKE %s OR u.email LIKE %s OR u.telephone LIKE %s OR u.birthday LIKE %s)")
+        extra_vals.extend([like, like, like, like, like, like, like])
     if is_admin:
-        cursor.execute(
+        base_sql = (
             """
             SELECT u.*, r.id AS role_id, r.role AS role_name
             FROM users u
             LEFT JOIN role_attribution ra ON ra.users_id = u.id
             LEFT JOIN roles r ON r.id = ra.roles_id
+            {where}
             ORDER BY u.id, r.id
             """
         )
+        where_clause = ("WHERE " + " AND ".join(extra_where)) if extra_where else ""
+        cursor.execute(base_sql.format(where=where_clause), tuple(extra_vals))
     elif is_group_admin:
         fid = current_user.get("id_father")
         mid = current_user.get("id_mother")
-        cursor.execute(
+        base_sql = (
             """
             SELECT u.*, r.id AS role_id, r.role AS role_name
             FROM users u
@@ -68,23 +91,29 @@ def get_members(cursor = Depends(get_cursor), current_user: dict = Depends(get_c
                 OR (%s IS NOT NULL AND (u.id_mother = %s OR u.id = %s))
                 OR u.id = %s
             )
+            {and_extra}
             ORDER BY u.id, r.id
-            """,
-            (fid, fid, fid, mid, mid, mid, current_user.get("id")),
+            """
         )
+        and_extra = (" AND " + " AND ".join(extra_where)) if extra_where else ""
+        vals = [fid, fid, fid, mid, mid, mid, current_user.get("id")] + extra_vals
+        cursor.execute(base_sql.format(and_extra=and_extra), tuple(vals))
     else:
         # Regular users see only themselves
-        cursor.execute(
+        base_sql = (
             """
             SELECT u.*, r.id AS role_id, r.role AS role_name
             FROM users u
             LEFT JOIN role_attribution ra ON ra.users_id = u.id
             LEFT JOIN roles r ON r.id = ra.roles_id
             WHERE u.id = %s
+            {and_extra}
             ORDER BY u.id, r.id
-            """,
-            (current_user.get("id"),),
+            """
         )
+        and_extra = (" AND " + " AND ".join(extra_where)) if extra_where else ""
+        vals = [current_user.get("id")] + extra_vals
+        cursor.execute(base_sql.format(and_extra=and_extra), tuple(vals))
     rows = cursor.fetchall()
     users_by_id = {}
     for row in rows:
