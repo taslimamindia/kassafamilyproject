@@ -52,6 +52,26 @@ export default defineConfig([
 ])
 ```
 
+## Internationalisation (i18n)
+
+La gestion de la langue est centralisée avec `i18next` et `react-i18next`.
+
+- Langues supportées: FR, EN, AR (RTL pour l'arabe).
+- Le sélecteur de langue est visible dans l'en-tête et persiste le choix en `localStorage`.
+
+### Utilisation dans les composants
+
+```tsx
+import { useTranslation } from 'react-i18next'
+
+function Example() {
+  const { t } = useTranslation()
+  return <span>{t('nav.login')}</span>
+}
+```
+
+Ajoutez vos clés dans `src/i18n.ts` (ou migrez progressivement vers des fichiers `src/locales/*`).
+
 You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
 
 ```js

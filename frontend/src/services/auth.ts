@@ -17,6 +17,13 @@ export async function login(identifier: string, password: string): Promise<strin
     return data.access_token
 }
 
+export async function changePasswordFirstLogin(identifier: string, oldPassword: string, newPassword: string): Promise<void> {
+    await postJson<{ status: string }, { identifier: string; old_password: string; new_password: string }>(
+        '/auth/change-password-first-login',
+        { identifier, old_password: oldPassword, new_password: newPassword },
+    )
+}
+
 export function getToken(): string | null {
     try {
         return localStorage.getItem('access_token')

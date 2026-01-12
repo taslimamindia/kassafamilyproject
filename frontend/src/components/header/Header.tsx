@@ -2,17 +2,94 @@ import './Header.css'
 import { Link, NavLink, useNavigate } from 'react-router-dom'
 import { useEffect, useState } from 'react'
 import { logout, verifyToken } from '../../services/auth'
+import { getCurrentUser } from '../../services/users'
+import { getRolesForUser } from '../../services/roleAttributions'
+import LanguageSwitcher from '../common/LanguageSwitcher'
+import { useTranslation } from 'react-i18next'
+import i18n from '../../i18n'
+
+// Localized dictionary for this component (decentralized)
+const headerResources = {
+    fr: {
+        header: {
+            userAccount: 'Compte utilisateur',
+            viewProfile: 'Voir le profil',
+            editProfile: 'Modifier le profil',
+        },
+        nav: {
+            login: 'Se connecter',
+            logout: 'Se déconnecter',
+            profile: 'Profil',
+            admin: 'Admin',
+            users: 'Utilisateurs',
+        },
+    },
+    en: {
+        header: {
+            userAccount: 'User account',
+            viewProfile: 'View profile',
+            editProfile: 'Edit profile',
+        },
+        nav: {
+            login: 'Sign in',
+            logout: 'Sign out',
+            profile: 'Profile',
+            admin: 'Admin',
+            users: 'Users',
+        },
+    },
+    ar: {
+        header: {
+            userAccount: 'حساب المستخدم',
+            viewProfile: 'عرض الملف',
+            editProfile: 'تعديل الملف',
+        },
+        nav: {
+            login: 'تسجيل الدخول',
+            logout: 'تسجيل الخروج',
+            profile: 'الملف الشخصي',
+            admin: 'المشرف',
+            users: 'المستخدمون',
+        },
+    },
+}
+
+for (const [lng, res] of Object.entries(headerResources)) {
+    i18n.addResourceBundle(lng, 'translation', res as any, true, false)
+}
 
 function Header() {
     const navigate = useNavigate()
     const [isAuth, setIsAuth] = useState<boolean | null>(null)
+    const [isAdmin, setIsAdmin] = useState<boolean>(false)
+    const [isGroupAdmin, setIsGroupAdmin] = useState<boolean>(false)
+    const { t } = useTranslation()
 
     useEffect(() => {
         let mounted = true
-        const refresh = () => {
-            verifyToken()
-                .then((ok) => { if (mounted) setIsAuth(ok) })
-                .catch(() => { if (mounted) setIsAuth(false) })
+        const refresh = async () => {
+            try {
+                const ok = await verifyToken()
+                if (!mounted) return
+                setIsAuth(ok)
+                if (ok) {
+                    try {
+                        const user = await getCurrentUser()
+                        const roles = await getRolesForUser(user.id)
+                        const names = roles.map(r => (r.role || '').toLowerCase())
+                        setIsAdmin(names.includes('admin'))
+                        setIsGroupAdmin(names.includes('admingroup') || names.includes('admin'))
+                    } catch {
+                        setIsAdmin(false)
+                        setIsGroupAdmin(false)
+                    }
+                } else {
+                    setIsAdmin(false)
+                    setIsGroupAdmin(false)
+                }
+            } catch {
+                if (mounted) { setIsAuth(false); setIsAdmin(false); setIsGroupAdmin(false) }
+            }
         }
         // Initial check
         refresh()
@@ -29,7 +106,7 @@ function Header() {
 
     function onLogout() {
         logout()
-        navigate('/auth', { replace: true })
+        navigate('/', { replace: true })
     }
 
     return (
@@ -51,41 +128,62 @@ function Header() {
                 </button>
                 <div className="collapse navbar-collapse" id="mainNavbar">
                     <ul className="navbar-nav ms-lg-auto mb-2 mb-lg-0 gap-lg-2 align-items-lg-center">
-                        {/* <li className="nav-item">
-                            <NavLink to="/" end className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-                                Accueil
-                            </NavLink>
-                        </li> */}
-                        {/* Auth controls */}
+                        
+                        {isAuth && (
+                            <li className="nav-item">
+                                <NavLink to="/user" className={({ isActive }) => `nav-link d-flex align-items-center gap-2 ${isActive ? 'active' : ''}`}>
+                                    <i className="bi bi-house-heart" aria-hidden="true"></i>
+                                    {t('nav.users')}
+                                </NavLink>
+                            </li>
+                        )}
+
+                        {isAuth && isAdmin && (
+                            <li className="nav-item">
+                                <NavLink to="/admin" className={({ isActive }) => `nav-link d-flex align-items-center gap-2 ${isActive ? 'active' : ''}`}>
+                                    <i className="bi bi-shield-lock" aria-hidden="true"></i>
+                                    Admin
+                                </NavLink>
+                            </li>
+                        )}
+                        {isAuth && isGroupAdmin && (
+                            <li className="nav-item">
+                                <NavLink to="/admingroup" className={({ isActive }) => `nav-link d-flex align-items-center gap-2 ${isActive ? 'active' : ''}`}>
+                                    <i className="bi bi-people" aria-hidden="true"></i>
+                                    Admin de Groupe
+                                </NavLink>
+                            </li>
+                        )}
+
                         {isAuth === null ? null : isAuth ? (
                             <li className="nav-item dropdown">
                                 <button
                                     className="btn nav-link dropdown-toggle d-flex align-items-center gap-2"
                                     data-bs-toggle="dropdown"
                                     aria-expanded="false"
-                                    aria-label="Compte utilisateur"
+                                    aria-label={t('header.userAccount')}
                                 >
                                     <i className="bi bi-person-circle fs-5" aria-hidden="true"></i>
-                                    <span>Profil</span>
+                                    <span>{t('nav.profile')}</span>
                                 </button>
                                 <ul className="dropdown-menu dropdown-menu-end">
                                     <li>
                                         <button className="dropdown-item d-flex align-items-center gap-2" onClick={() => navigate('/profil')}>
                                             <i className="bi bi-person" aria-hidden="true"></i>
-                                            Voir le profil
+                                            {t('header.viewProfile')}
                                         </button>
                                     </li>
                                     <li>
                                         <button className="dropdown-item d-flex align-items-center gap-2" onClick={() => navigate('/profil?edit=1')}>
                                             <i className="bi bi-pencil-square" aria-hidden="true"></i>
-                                            Modifier le profil
+                                            {t('header.editProfile')}
                                         </button>
                                     </li>
                                     <li><hr className="dropdown-divider" /></li>
                                     <li>
                                         <button className="dropdown-item text-danger d-flex align-items-center gap-2" onClick={onLogout}>
                                             <i className="bi bi-box-arrow-right" aria-hidden="true"></i>
-                                            Se déconnecter
+                                            {t('nav.logout')}
                                         </button>
                                     </li>
                                 </ul>
@@ -94,10 +192,14 @@ function Header() {
                             <li className="nav-item">
                                 <NavLink to="/auth" className={({ isActive }) => `nav-link d-flex align-items-center gap-2 ${isActive ? 'active' : ''}`}>
                                     <i className="bi bi-box-arrow-in-right" aria-hidden="true"></i>
-                                    Se connecter
+                                    {t('nav.login')}
                                 </NavLink>
                             </li>
                         )}
+                        {/* Language switcher */}
+                        <li className="nav-item d-flex align-items-center">
+                            <LanguageSwitcher />
+                        </li>
                     </ul>
                 </div>
             </nav>

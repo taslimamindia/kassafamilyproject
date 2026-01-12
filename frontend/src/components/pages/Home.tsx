@@ -1,4 +1,41 @@
 import './Home.css'
+import { useTranslation } from 'react-i18next'
+import i18n from '../../i18n'
+
+// Localized dictionary for this component
+const homeResources = {
+	fr: {
+		home: {
+			title: "Bienvenue à l'Association Familiale",
+			lead: 'Renforcer les liens, soutenir les familles et bâtir une communauté solidaire.',
+			join: 'Nous rejoindre',
+			learnMore: 'En savoir plus',
+			altParents: 'Photo des parents',
+		},
+	},
+	en: {
+		home: {
+			title: 'Welcome to the Family Association',
+			lead: 'Strengthen bonds, support families, and build a caring community.',
+			join: 'Join us',
+			learnMore: 'Learn more',
+			altParents: 'Parents photo',
+		},
+	},
+	ar: {
+		home: {
+			title: 'مرحبًا بكم في الجمعية العائلية',
+			lead: 'تعزيز الروابط، دعم الأسر، وبناء مجتمع متكافل.',
+			join: 'انضم إلينا',
+			learnMore: 'اعرف المزيد',
+			altParents: 'صورة الوالدين',
+		},
+	},
+}
+
+for (const [lng, res] of Object.entries(homeResources)) {
+	i18n.addResourceBundle(lng, 'translation', res as any, true, false)
+}
 // import nenebiro1 from '@assets/img/nenebiro1.jpeg'
 const imagesDict = import.meta.glob('@assets/img/parents/*.*', {
 	eager: true,
@@ -6,21 +43,22 @@ const imagesDict = import.meta.glob('@assets/img/parents/*.*', {
 });
 
 function Home() {
+	const { t } = useTranslation()
 	return (
-		<section className="py-4 py-md-5 h-100">
-			<div className="container h-100">
-				<div className="row h-100 align-items-center g-4">
+		<section className="py-4 py-md-5">
+			<div className="container">
+				<div className="row align-items-center g-4">
 					<div className="col-12 col-md-6 d-flex flex-column justify-content-center h-100">
-						<h1 className="display-6 fw-semibold mb-3">Bienvenue à l'Association Familiale</h1>
+						<h1 className="display-6 fw-semibold mb-3">{t('home.title')}</h1>
 						<p className="lead mb-4">
-							Renforcer les liens, soutenir les familles et bâtir une communauté solidaire.
+							{t('home.lead')}
 						</p>
 						<div className="d-flex gap-2">
 							<a href="#" className="btn btn-primary">
-								Nous rejoindre
+								{t('home.join')}
 							</a>
 							<a href="#" className="btn btn-outline-primary">
-								En savoir plus
+								{t('home.learnMore')}
 							</a>
 						</div>
 					</div>
@@ -60,7 +98,7 @@ function Home() {
 											<img
 												key={i}
 												src={src}
-												alt="Photo des parents"
+												alt={t('home.altParents')}
 												className="w-100 h-100 position-absolute top-0 start-0"
 												style={{
 													objectFit: 'cover',

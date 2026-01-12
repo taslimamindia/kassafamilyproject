@@ -4,3 +4,7 @@ __pycache__/
 *.pyc
 .DS_Store
 *.env
+donnees.csv
+backend_key_externe.pem
+new_key.pub
+new_key
