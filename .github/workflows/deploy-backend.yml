@@ -1,4 +1,4 @@
-name: Deploy Backend to Lightsail (Local Mode)
+name: Deploy Backend to Lightsail (Flat Structure)
 
 on:
   pull_request:
@@ -25,60 +25,51 @@ jobs:
           key: ${{ secrets.BACKEND_SSH_PRIVATE_KEY }}
           port: 22
           envs: >-
-            BACKEND_ENV,
-            BACKEND_LOCAL_DB_HOST,
-            BACKEND_LOCAL_DB_USER,
-            BACKEND_LOCAL_DB_PASS,
-            BACKEND_LOCAL_DB_NAME,
-            BACKEND_LOCAL_DB_PORT,
-            BACKEND_JWT_SECRET,
-            BACKEND_JWT_ALGORITHM,
-            BACKEND_JWT_EXP_MINUTES,
-            BACKEND_PUBLIC_PATHS,
-            BACKEND_USER_PASSWORD_DEFAULT,
-            BACKEND_AWS_S3_BUCKET,
-            BACKEND_AWS_REGION,
-            BACKEND_AWS_ACCESS_KEY_ID,
+            BACKEND_ENV,BACKEND_LOCAL_DB_HOST,BACKEND_LOCAL_DB_USER,
+            BACKEND_LOCAL_DB_PASS,BACKEND_LOCAL_DB_NAME,BACKEND_LOCAL_DB_PORT,
+            BACKEND_JWT_SECRET,BACKEND_JWT_ALGORITHM,BACKEND_JWT_EXP_MINUTES,
+            BACKEND_PUBLIC_PATHS,BACKEND_USER_PASSWORD_DEFAULT,
+            BACKEND_AWS_S3_BUCKET,BACKEND_AWS_REGION,BACKEND_AWS_ACCESS_KEY_ID,
             BACKEND_AWS_SECRET_ACCESS_KEY
           script: |
-            # --- GESTION DES ERREURS ---
-            # Arrête le script dès qu'une commande échoue
             set -e 
 
             TARGET_DIR="/home/ubuntu/kassa/api_famille_kassatech_org"
             ROOT_DIR="/home/ubuntu/kassa"
-            
-            # Utilisation d'un token pour l'accès au dépôt privé (si nécessaire)
-            # Remplacez GITHUB_TOKEN par un secret si le dépôt est privé
+            TEMP_GIT_DIR="/home/ubuntu/kassa/temp_git_clone"
             REPO_URL="https://github.com/${{ github.repository }}.git"
 
-            echo "Début du déploiement..."
+            echo "🚀 Déploiement ciblé du contenu de /backend..."
 
-            # 1. Correction des permissions
+            # 1. Nettoyage des permissions
             sudo chown -R ubuntu:ubuntu $ROOT_DIR
-            git config --global --add safe.directory $TARGET_DIR
 
-            # 2. Gestion du dépôt Git
-            if [ ! -d "$TARGET_DIR/.git" ]; then
-              echo "Dossier .git absent. Clonage initial..."
-              sudo rm -rf $TARGET_DIR 
-              mkdir -p $TARGET_DIR
-              git clone $REPO_URL $TARGET_DIR
-            fi
+            # 2. Utilisation d'un dossier temporaire pour extraire le dossier backend
+            rm -rf $TEMP_GIT_DIR
+            mkdir -p $TEMP_GIT_DIR
+            cd $TEMP_GIT_DIR
 
-            cd $TARGET_DIR
-
-            # Reconfiguration forcée du remote
-            git remote remove origin || true
+            # Initialisation Git Sparse Checkout
+            git init
             git remote add origin $REPO_URL
-
-            echo "Mise à jour du code..."
+            git config core.sparseCheckout true
+            echo "backend/" >> .git/info/sparse-checkout
+            
+            # Fetch et Pull
             git fetch origin main
             git reset --hard origin/main
 
-            # 3. Génération du fichier .env
-            echo "Génération du fichier .env..."
-            cat <<EOF > .env
+            # 3. Transfert du CONTENU de backend/ vers TARGET_DIR (sans créer le dossier backend)
+            mkdir -p $TARGET_DIR
+            # On utilise rsync pour copier seulement le contenu
+            rsync -av --delete $TEMP_GIT_DIR/backend/ $TARGET_DIR/
+            
+            # On nettoie le dossier temporaire
+            rm -rf $TEMP_GIT_DIR
+
+            # 4. Génération du fichier .env directement dans TARGET_DIR
+            echo "⚙️  Génération du fichier .env dans $TARGET_DIR"
+            cat <<EOF > $TARGET_DIR/.env
             BACKEND_ENV=$BACKEND_ENV
             BACKEND_LOCAL_DB_HOST=$BACKEND_LOCAL_DB_HOST
             BACKEND_LOCAL_DB_USER=$BACKEND_LOCAL_DB_USER
@@ -96,22 +87,23 @@ jobs:
             BACKEND_AWS_SECRET_ACCESS_KEY=$BACKEND_AWS_SECRET_ACCESS_KEY
             EOF
 
-            # 4. Dépendances
+            # 5. Mise à jour des dépendances (requirements.txt est maintenant dans TARGET_DIR)
             cd $ROOT_DIR
-            if [ ! -f "venv/bin/activate" ]; then
-               echo "Erreur : Environnement virtuel introuvable."
-               exit 1
-            fi
             source venv/bin/activate
-            pip install -r requirements.txt
+            pip install -r $TARGET_DIR/requirements.txt
 
-            # 5. Redémarrage
-            echo "Redémarrage du service..."
+            # 6. Redémarrage et Validation
+            echo "🔄 Redémarrage du service..."
             sudo systemctl restart fastapi_famille_kassa.service
-
-            # 6. Vérification finale du statut (si status != 0, le workflow échoue)
-            sudo systemctl is-active --quiet fastapi_famille_kassa.service
-            echo "Le service est actif. Déploiement réussi."
+            
+            sleep 2
+            if sudo systemctl is-active --quiet fastapi_famille_kassa.service; then
+                echo "✅ Déploiement réussi (Contenu de /backend injecté)."
+            else
+                echo "❌ ERREUR : Le service a échoué."
+                sudo systemctl status fastapi_famille_kassa.service --no-pager
+                exit 1
+            fi
 
         env:
           BACKEND_ENV: "local"
