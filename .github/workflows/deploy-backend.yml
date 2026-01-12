@@ -20,9 +20,9 @@ jobs:
       - name: Deploy and Configure Env
         uses: appleboy/ssh-action@v1.0.3
         with:
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          host: ${{ secrets.BACKEND_SSH_HOST }}
+          username: ${{ secrets.BACKEND_SSH_USER }}
+          key: ${{ secrets.BACKEND_SSH_PRIVATE_KEY }}
           port: 22
           envs: >-
             BACKEND_ENV,
