@@ -11,12 +11,13 @@ on:
 
 jobs:
   deploy:
+    if: github.event.pull_request.merged == true || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Deploy and Configure Local Env
+      - name: Deploy and Configure Env
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.SSH_HOST }}
@@ -31,32 +32,31 @@ jobs:
             BACKEND_AWS_S3_BUCKET,BACKEND_AWS_REGION,BACKEND_AWS_ACCESS_KEY_ID,
             BACKEND_AWS_SECRET_ACCESS_KEY
         env:
-          # On force l'environnement à 'local'
           BACKEND_ENV: "local"
           BACKEND_LOCAL_DB_HOST: ${{ secrets.LOCAL_DB_HOST }}
           BACKEND_LOCAL_DB_USER: ${{ secrets.LOCAL_DB_USER }}
           BACKEND_LOCAL_DB_PASS: ${{ secrets.LOCAL_DB_PASS }}
           BACKEND_LOCAL_DB_NAME: ${{ secrets.LOCAL_DB_NAME }}
           BACKEND_LOCAL_DB_PORT: ${{ secrets.LOCAL_DB_PORT }}
-          # Secrets requis par l'initialisation de ta classe Settings
           BACKEND_JWT_SECRET: ${{ secrets.JWT_SECRET }}
           BACKEND_JWT_ALGORITHM: "HS256"
           BACKEND_JWT_EXP_MINUTES: 1440
           BACKEND_PUBLIC_PATHS: "/login,/register,/docs"
           BACKEND_USER_PASSWORD_DEFAULT: ${{ secrets.USER_PWD_DEFAULT }}
-          # S3 (Optionnel selon ton code, mais requis si settings.py les lit)
           BACKEND_AWS_S3_BUCKET: ${{ secrets.AWS_S3_BUCKET }}
           BACKEND_AWS_REGION: ${{ secrets.AWS_REGION }}
           BACKEND_AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           BACKEND_AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           
           script: |
-            cd /home/ubuntu/kassa
+            # On entre dans le dossier spécifique du code
+            cd /home/ubuntu/kassa/api_famille_kassatech_org
             
+            # Mise à jour du code source
             git pull origin main
 
-            # Génération du .env avec les variables LOCAL
-            cat <<EOF > api_famille_kassatech_org/.env
+            # Création du fichier .env au même endroit que settings.py
+            cat <<EOF > .env
             BACKEND_ENV=$BACKEND_ENV
             BACKEND_LOCAL_DB_HOST=$BACKEND_LOCAL_DB_HOST
             BACKEND_LOCAL_DB_USER=$BACKEND_LOCAL_DB_USER
@@ -74,7 +74,8 @@ jobs:
             BACKEND_AWS_SECRET_ACCESS_KEY=$BACKEND_AWS_SECRET_ACCESS_KEY
             EOF
 
-            # Installation des dépendances dans le venv existant
+            # Installation des dépendances (requirements.txt est dans /home/ubuntu/kassa)
+            cd /home/ubuntu/kassa
             source venv/bin/activate
             pip install -r requirements.txt
 
