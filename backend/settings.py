@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 from dotenv import load_dotenv
 
 
@@ -6,6 +7,11 @@ class Settings:
     def __init__(self):
         # Load environment variables from .env if present
         load_dotenv()
+
+        # Base directories to help resolve relative paths robustly
+        self._backend_dir = Path(__file__).resolve().parent
+        # Project root assumed to be parent of backend directory
+        self._project_root = self._backend_dir.parent
 
         # Environment (required)
         self.env = os.environ["BACKEND_ENV"]
@@ -22,6 +28,20 @@ class Settings:
         self.local_db_pass = os.getenv("BACKEND_LOCAL_DB_PASS")
         self.local_db_name = os.getenv("BACKEND_LOCAL_DB_NAME")
         self.local_db_port = int(os.getenv("BACKEND_LOCAL_DB_PORT", "3306"))
+
+        # Optional: route DB via SSH tunnel (e.g., Lightsail with PEM)
+        self.db_via_ssh = str(os.getenv("BACKEND_DB_VIA_SSH", "false")).strip().lower() in {"1", "true", "yes"}
+        self.ssh_host = os.getenv("BACKEND_SSH_HOST")
+        self.ssh_port = int(os.getenv("BACKEND_SSH_PORT", "22"))
+        self.ssh_user = os.getenv("BACKEND_SSH_USER")
+        # Absolute or relative path to the .pem private key
+        self.ssh_key_path = os.getenv("BACKEND_SSH_KEY_PATH")
+        # Optional SSH key passphrase and/or password
+        self.ssh_key_password = os.getenv("BACKEND_SSH_KEY_PASSWORD")
+        self.ssh_password = os.getenv("BACKEND_SSH_PASSWORD")
+        # Where MySQL is listening on the remote host (usually 127.0.0.1:3306)
+        self.ssh_remote_bind_host = os.getenv("BACKEND_SSH_REMOTE_BIND_HOST", "127.0.0.1")
+        self.ssh_remote_bind_port = int(os.getenv("BACKEND_SSH_REMOTE_BIND_PORT", "3306"))
 
         # JWT (required)
         self.jwt_secret = os.environ["BACKEND_JWT_SECRET"]
@@ -52,6 +72,30 @@ class Settings:
         self.aws_s3_base_folder = os.getenv("BACKEND_AWS_S3_BASE_FOLDER")
         self.aws_base_folder = os.getenv("BACKEND_AWS_BASE_FOLDER")
 
+        # Resolve SSH key path early so downstream code consistently gets an absolute path
+        if self.ssh_key_path:
+            resolved = self._resolve_path(self.ssh_key_path)
+            if Path(resolved).exists():
+                self.ssh_key_path = resolved
+            else:
+                # Fallback to common key filenames at project root
+                for candidate in [
+                    self._project_root / "new_key",
+                    self._project_root / "new_key.pem",
+                ]:
+                    if candidate.exists():
+                        self.ssh_key_path = str(candidate.resolve())
+                        break
+                else:
+                    # Keep the resolved path even if missing; downstream code will error clearly
+                    self.ssh_key_path = resolved
+        else:
+            # Optional default: if a file named 'new_key' exists at project root, use it
+            default_key = self._project_root / "new_key"
+            if default_key.exists():
+                self.ssh_key_path = str(default_key)
+            # Else leave as None; code paths will handle missing key configuration
+
     def get_db_config(self):
         if self.env == "prod":
             return {
@@ -71,6 +115,28 @@ class Settings:
                 "port": self.local_db_port,
                 "connect_timeout": 5,
             }
+
+    def _resolve_path(self, path_str: str) -> str:
+        """Resolve a potentially relative path to an absolute path.
+        Tries current working directory, backend directory, and project root.
+        Also expands ~ (home) and environment variables.
+        """
+        # Expand ~ and environment variables first
+        expanded = os.path.expanduser(os.path.expandvars(path_str))
+        candidate_paths = [
+            Path(expanded),
+            self._backend_dir / expanded,
+            self._project_root / expanded,
+        ]
+        for p in candidate_paths:
+            try:
+                if p.exists():
+                    return str(p.resolve())
+            except Exception:
+                # If path is malformed, skip
+                pass
+        # If none exist, return absolute path based on expanded as-is
+        return str(Path(expanded).resolve())
 
 
 # Singleton settings instance

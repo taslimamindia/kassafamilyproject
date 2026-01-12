@@ -23,6 +23,7 @@ async def parse_create_request(request: Request) -> Tuple[dict, Optional[UploadF
             data = {
                 "firstname": form.get("firstname") or None,
                 "lastname": form.get("lastname") or None,
+                "username": _opt("username"),
                 "email": _opt("email"),
                 "telephone": _opt("telephone"),
                 "birthday": _opt("birthday"),
@@ -130,7 +131,7 @@ async def parse_update_request(request: Request) -> Tuple[dict, Optional[UploadF
         logger.warning("[users] parse_update_request: failed to parse json; err=%s", e)
     return {}, None
 
-def generate_username_logic(firstname: str, lastname: str, birthday: Optional[str], cursor) -> str:
+def _base_username_from_names(firstname: str, lastname: str, birthday: Optional[str]) -> str:
     parts = []
     if firstname:
         parts.extend([p for p in firstname.strip().split() if p])
@@ -143,14 +144,30 @@ def generate_username_logic(firstname: str, lastname: str, birthday: Optional[st
             year = str(datetime.fromisoformat(birthday).year)
     except Exception:
         year = ''
+    return (initials + year).strip()
 
-    username = initials + year
-    
-    # Check for simple collision
-    cursor.execute("SELECT id FROM users WHERE username = %s LIMIT 1", (username,))
-    if cursor.fetchone():
-        # Ideally we should append a suffix here if we wanted robust generation
-        # But keeping logic consistent with original for now, just isolated
-        raise ValueError("Le nom d'utilisateur généré existe déjà, veuillez contacter l'administrateur.")
+def ensure_unique_username(desired: str, cursor, exclude_user_id: Optional[int] = None, max_tries: int = 1000) -> str:
+    """Ensure uniqueness by appending a numeric suffix when needed.
+    If `exclude_user_id` is provided, the current user's username won't count as a collision.
+    """
+    base = (desired or '').strip()
+    if base == '':
+        raise ValueError("Nom d'utilisateur vide")
+    # Try without suffix first, then with incremental suffixes
+    for i in range(max_tries):
+        candidate = base if i == 0 else f"{base}{i}"
+        cursor.execute("SELECT id FROM users WHERE username = %s LIMIT 1", (candidate,))
+        row = cursor.fetchone()
+        if not row:
+            return candidate
+        # If the row is the same as exclude_user_id, it's okay to reuse
+        if exclude_user_id is not None:
+            # row may be dict or tuple depending on cursor config
+            found_id = row[0] if not isinstance(row, dict) else row.get('id')
+            if found_id == exclude_user_id:
+                return candidate
+    raise ValueError("Impossible de générer un nom d'utilisateur unique")
 
-    return username
+def generate_username_logic(firstname: str, lastname: str, birthday: Optional[str], cursor) -> str:
+    base = _base_username_from_names(firstname, lastname, birthday)
+    return ensure_unique_username(base, cursor)

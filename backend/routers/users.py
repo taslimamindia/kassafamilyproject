@@ -139,10 +139,16 @@ async def create_user(request: Request, cursor = Depends(get_cursor), current_us
         logger.info("[users] Aucune image reçue (création)")
     body = UserCreate(**data)
     
-    try:
-        body.username = generate_username_logic(body.firstname, body.lastname, body.birthday, cursor)
-    except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
+    if not body.username or not body.username.strip():
+        try:
+            body.username = generate_username_logic(body.firstname, body.lastname, body.birthday, cursor)
+        except ValueError as e:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
+    else:
+        # Check uniqueness of provided username
+        cursor.execute("SELECT id FROM users WHERE username = %s LIMIT 1", (body.username,))
+        if cursor.fetchone():
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Ce nom d'utilisateur est déjà pris.")
 
     if upload is not None:
         try:
@@ -239,7 +245,14 @@ async def update_user_by_id(user_id: int, request: Request, cursor = Depends(get
     
     if body.firstname is not None: fields.append("firstname = %s"); values.append(body.firstname)
     if body.lastname is not None: fields.append("lastname = %s"); values.append(body.lastname)
-    if body.username is not None: fields.append("username = %s"); values.append(body.username)
+    if body.username is not None:
+        # If a username is provided, generate a unique combination based on it
+        from utils import ensure_unique_username
+        try:
+            unique_uname = ensure_unique_username(body.username, cursor, exclude_user_id=user_id)
+        except ValueError as e:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
+        fields.append("username = %s"); values.append(unique_uname)
     if body.email is not None: fields.append("email = %s"); values.append(body.email)
     if body.telephone is not None: fields.append("telephone = %s"); values.append(body.telephone)
     if body.birthday is not None: fields.append("birthday = %s"); values.append(body.birthday)
@@ -293,7 +306,7 @@ async def update_user_by_id(user_id: int, request: Request, cursor = Depends(get
     fields.append("updatedat = CURRENT_TIMESTAMP")
     
     if upload is not None:
-        desired_username = body.username or row_curr.get("username")
+        desired_username = (values[fields.index("username = %s")] if "username = %s" in fields else (body.username or row_curr.get("username")))
         if not desired_username:
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="username requis")
         try:
@@ -322,13 +335,20 @@ async def update_user_by_id(user_id: int, request: Request, cursor = Depends(get
     return u
 
 @router.delete("/users/{user_id}")
-def delete_user_by_id(user_id: int, cursor = Depends(get_cursor), current_user: dict = Depends(get_current_user)):
+def delete_user_by_id(user_id: int, hard: bool = False, cursor = Depends(get_cursor), current_user: dict = Depends(get_current_user)):
     # Authorization: admin ok; group admin only if target in same group; others forbidden
     cursor.execute("SELECT id, id_father, id_mother FROM users WHERE id = %s", (user_id,))
     target = cursor.fetchone()
     if not target:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-    if not has_role(cursor, current_user["id"], "admin"):
+    
+    is_admin = has_role(cursor, current_user["id"], "admin")
+    
+    if not is_admin:
+        if hard:
+            # Only admins can hard delete
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only admins can perform hard delete")
+            
         if has_role(cursor, current_user["id"], "admingroup"):
             fid = current_user.get("id_father")
             mid = current_user.get("id_mother")
@@ -341,6 +361,21 @@ def delete_user_by_id(user_id: int, cursor = Depends(get_cursor), current_user: 
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
         else:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+            
+    if hard:
+        # Check for dependencies (like being a parent to other users)? 
+        # For now, let SQL errors handle constraints or cascade if configured. 
+        # Assuming simple DELETE for now.
+        try:
+             # First remove role attributions to avoid constraint errors if not cascaded
+            cursor.execute("DELETE FROM role_attribution WHERE users_id = %s", (user_id,))
+            cursor.execute("DELETE FROM users WHERE id = %s", (user_id,))
+            getattr(cursor, "_connection").commit()
+            return {"status": "deleted", "id": user_id}
+        except Exception as e:
+            logger.exception("[users] Hard delete failed")
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Impossible de supprimer l'utilisateur (contraintes DB?)")
+            
     cursor.execute(
         "UPDATE users SET isactive = %s, updatedby = %s, updatedat = CURRENT_TIMESTAMP WHERE id = %s",
         (0, current_user["id"], user_id),

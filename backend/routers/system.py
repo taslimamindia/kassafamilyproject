@@ -18,7 +18,13 @@ def check_db(current_user: dict = Depends(get_current_user)):
     try:
         cursor.execute("SELECT DATABASE();")
         db_name = cursor.fetchone()[0]
-        return {"env": settings.env, "db": db_name, "status": "Connected"}
+        db_type = "online" if settings.env == "prod" else "local"
+        return {
+            "env": settings.env,
+            "db": db_name,
+            "status": "Connected",
+            "db_type": db_type,
+        }
     finally:
         cursor.close()
         conn.close()
@@ -100,32 +106,75 @@ async def memory_ws(websocket: WebSocket):
 
     await websocket.accept()
 
-    # Stream memory stats periodically
-    try:
-        proc = psutil.Process()
-        while True:
-            vm = psutil.virtual_memory()
-            rss = proc.memory_info().rss
-            proc_percent = proc.memory_percent()
-            await websocket.send_json(
-                {
-                    "total": vm.total,
-                    "available": vm.available,
-                    "used": vm.used,
-                    "percent": vm.percent,
-                    "rss": rss,
-                    "proc_percent": proc_percent,
-                    "ts": datetime.utcnow().isoformat() + "Z",
-                }
-            )
-            await asyncio.sleep(1.0)
-    except WebSocketDisconnect:
-        # Client disconnected
-        pass
-    except Exception:
-        logger.exception("[system] memory_ws streaming error")
+    # Heartbeat-based idle timeout: if client doesn't send anything for IDLE_TIMEOUT seconds, disconnect
+    IDLE_TIMEOUT = 45.0  # seconds
+    last_client_msg = asyncio.get_event_loop().time()
+
+    async def recv_loop():
+        nonlocal last_client_msg
         try:
-            await websocket.close(code=1011)  # Internal error
+            while True:
+                # Any message from client updates last seen; ignore content
+                await websocket.receive_text()
+                last_client_msg = asyncio.get_event_loop().time()
+        except WebSocketDisconnect:
+            # Client closed the connection
+            pass
+        except Exception:
+            # Treat other receive errors as disconnects
+            try:
+                await websocket.close(code=1011)
+            except Exception:
+                pass
+
+    async def send_loop():
+        try:
+            proc = psutil.Process()
+            while True:
+                now = asyncio.get_event_loop().time()
+                if now - last_client_msg > IDLE_TIMEOUT:
+                    # Idle timeout reached: close connection
+                    try:
+                        await websocket.close(code=4408)  # Policy/timeout
+                    except Exception:
+                        pass
+                    break
+                vm = psutil.virtual_memory()
+                rss = proc.memory_info().rss
+                proc_percent = proc.memory_percent()
+                await websocket.send_json(
+                    {
+                        "total": vm.total,
+                        "available": vm.available,
+                        "used": vm.used,
+                        "percent": vm.percent,
+                        "rss": rss,
+                        "proc_percent": proc_percent,
+                        "ts": datetime.utcnow().isoformat() + "Z",
+                    }
+                )
+                await asyncio.sleep(1.0)
+        except WebSocketDisconnect:
+            # Client disconnected
+            pass
+        except Exception:
+            logger.exception("[system] memory_ws streaming error")
+            try:
+                await websocket.close(code=1011)  # Internal error
+            except Exception:
+                pass
+
+    # Run both loops concurrently; stop when either finishes
+    try:
+        recv_task = asyncio.create_task(recv_loop())
+        send_task = asyncio.create_task(send_loop())
+        done, pending = await asyncio.wait({recv_task, send_task}, return_when=asyncio.FIRST_COMPLETED)
+        for task in pending:
+            task.cancel()
+    except Exception:
+        # Ensure socket is closed on unexpected errors
+        try:
+            await websocket.close(code=1011)
         except Exception:
             pass
 
