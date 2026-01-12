@@ -24,31 +24,48 @@ jobs:
           username: ${{ secrets.BACKEND_SSH_USER }}
           key: ${{ secrets.BACKEND_SSH_PRIVATE_KEY }}
           port: 22
-          # On déclare quelles variables d'environnement l'action doit transférer au script SSH
+          # Liste des variables à transmettre du runner GitHub vers l'instance SSH
           envs: >-
-            BACKEND_ENV,BACKEND_LOCAL_DB_HOST,BACKEND_LOCAL_DB_USER,
-            BACKEND_LOCAL_DB_PASS,BACKEND_LOCAL_DB_NAME,BACKEND_LOCAL_DB_PORT,
-            BACKEND_JWT_SECRET,BACKEND_JWT_ALGORITHM,BACKEND_JWT_EXP_MINUTES,
-            BACKEND_PUBLIC_PATHS,BACKEND_USER_PASSWORD_DEFAULT,
-            BACKEND_AWS_S3_BUCKET,BACKEND_AWS_REGION,BACKEND_AWS_ACCESS_KEY_ID,
+            BACKEND_ENV,
+            BACKEND_LOCAL_DB_HOST,
+            BACKEND_LOCAL_DB_USER,
+            BACKEND_LOCAL_DB_PASS,
+            BACKEND_LOCAL_DB_NAME,
+            BACKEND_LOCAL_DB_PORT,
+            BACKEND_JWT_SECRET,
+            BACKEND_JWT_ALGORITHM,
+            BACKEND_JWT_EXP_MINUTES,
+            BACKEND_PUBLIC_PATHS,
+            BACKEND_USER_PASSWORD_DEFAULT,
+            BACKEND_AWS_S3_BUCKET,
+            BACKEND_AWS_REGION,
+            BACKEND_AWS_ACCESS_KEY_ID,
             BACKEND_AWS_SECRET_ACCESS_KEY
-          # LE SCRIPT DOIT ÊTRE ICI (DANS WITH)
           script: |
-            # 1. Préparation des dossiers
-            mkdir -p /home/ubuntu/kassa/api_famille_kassatech_org
-            cd /home/ubuntu/kassa/api_famille_kassatech_org
+            # 1. Variables de chemins
+            TARGET_DIR="/home/ubuntu/kassa/api_famille_kassatech_org"
+            ROOT_DIR="/home/ubuntu/kassa"
 
-            # 2. Initialisation ou Mise à jour du code
-            if [ ! -d ".git" ]; then
-              echo "Initialisation du dépôt..."
-              git clone https://github.com/${{ github.repository }}.git .
-            else
-              echo "Mise à jour du dépôt..."
-              git fetch origin main
-              git reset --hard origin/main
+            # 2. Correction des permissions et sécurité Git
+            # On s'assure que l'utilisateur 'ubuntu' est propriétaire de tout le projet
+            sudo chown -R ubuntu:ubuntu $ROOT_DIR
+            # On autorise Git à travailler dans ce dossier (évite l'erreur 'dubious ownership')
+            git config --global --add safe.directory $TARGET_DIR
+
+            # 3. Initialisation ou Mise à jour du code source
+            if [ ! -d "$TARGET_DIR/.git" ]; then
+              echo "Dossier .git absent. Clonage du dépôt..."
+              mkdir -p $TARGET_DIR
+              git clone https://github.com/${{ github.repository }}.git $TARGET_DIR
             fi
 
-            # 3. Création du fichier .env
+            cd $TARGET_DIR
+            echo "Mise à jour du code (reset hard)..."
+            git fetch origin main
+            git reset --hard origin/main
+
+            # 4. Création du fichier .env
+            echo "Génération du fichier .env..."
             cat <<EOF > .env
             BACKEND_ENV=$BACKEND_ENV
             BACKEND_LOCAL_DB_HOST=$BACKEND_LOCAL_DB_HOST
@@ -67,25 +84,26 @@ jobs:
             BACKEND_AWS_SECRET_ACCESS_KEY=$BACKEND_AWS_SECRET_ACCESS_KEY
             EOF
 
-            # 4. Mise à jour des dépendances
-            cd /home/ubuntu/kassa
+            # 5. Mise à jour des dépendances Python
+            cd $ROOT_DIR
             if [ -f "venv/bin/activate" ]; then
               source venv/bin/activate
               pip install -r requirements.txt
             else
-              echo "Erreur: Virtualenv non trouvé dans /home/ubuntu/kassa/venv"
+              echo "ERREUR : Environnement virtuel introuvable dans $ROOT_DIR/venv"
               exit 1
             fi
 
-            # 5. Redémarrage du service
+            # 6. Redémarrage du service systemd
+            echo "Redémarrage du service FastAPI..."
             sudo systemctl restart fastapi_famille_kassa.service
-            
-            # 6. Vérification
+
+            # 7. Vérification finale
             echo "Statut du service :"
             sudo systemctl status fastapi_famille_kassa.service --no-pager
             echo "Déploiement terminé avec succès."
 
-        # DEFINITION DES VARIABLES (POUR LE TRANSFERT VERS ENVS CI-DESSUS)
+        # Mapping entre Secrets GitHub et Variables d'environnement
         env:
           BACKEND_ENV: "local"
           BACKEND_LOCAL_DB_HOST: ${{ secrets.BACKEND_ONLINE_DB_HOST }}
