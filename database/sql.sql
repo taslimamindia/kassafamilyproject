@@ -87,12 +87,11 @@ CREATE TABLE IF NOT EXISTS `database_kassa`.`role_attribution` (
   `users_id` INT NOT NULL,
   `roles_id` INT NOT NULL,
   PRIMARY KEY (`id`),
-  INDEX `fk_role_attribution_users_idx` (`users_id` ASC, `roles_id` ASC) VISIBLE,
+  INDEX `fk_role_attribution_users1_idx` (`users_id` ASC) VISIBLE,
   INDEX `fk_role_attribution_roles1_idx` (`roles_id` ASC) VISIBLE,
-  UNIQUE INDEX `unique_role_index` (`users_id` ASC, `roles_id` ASC) VISIBLE,
-  CONSTRAINT `fk_role_attribution_users`
-    FOREIGN KEY (`users_id` , `roles_id`)
-    REFERENCES `database_kassa`.`users` (`id` , `id`)
+  CONSTRAINT `fk_role_attribution_users1`
+    FOREIGN KEY (`users_id`)
+    REFERENCES `database_kassa`.`users` (`id`)
     ON DELETE NO ACTION
     ON UPDATE NO ACTION,
   CONSTRAINT `fk_role_attribution_roles1`
