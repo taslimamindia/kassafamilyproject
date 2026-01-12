@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # --- CONFIGURATION ---
-ENV_FILE=".env"
+ENV_FILE="./backend/prod.env"
 # Optional: Define a specific repo. Leave empty "" for the current directory.
 TARGET_REPO="taslimamindia/kassafamilyproject" 
 
@@ -29,7 +29,7 @@ update_github_secret() {
     gh secret set "$name" $repo_arg --body "$value"
 
     if [ $? -eq 0 ]; then
-        echo "✅ Updated"
+        echo "✅ Updated: $value"
     else
         echo "❌ Failed"
     fi
