@@ -1,0 +1,82 @@
+name: Deploy Backend to Lightsail (Local Mode)
+
+on:
+  pull_request:
+    branches:
+      - main
+    types: [closed]
+    paths:
+      - 'backend/**'
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy and Configure Local Env
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: 22
+          envs: >-
+            BACKEND_ENV,BACKEND_LOCAL_DB_HOST,BACKEND_LOCAL_DB_USER,
+            BACKEND_LOCAL_DB_PASS,BACKEND_LOCAL_DB_NAME,BACKEND_LOCAL_DB_PORT,
+            BACKEND_JWT_SECRET,BACKEND_JWT_ALGORITHM,BACKEND_JWT_EXP_MINUTES,
+            BACKEND_PUBLIC_PATHS,BACKEND_USER_PASSWORD_DEFAULT,
+            BACKEND_AWS_S3_BUCKET,BACKEND_AWS_REGION,BACKEND_AWS_ACCESS_KEY_ID,
+            BACKEND_AWS_SECRET_ACCESS_KEY
+        env:
+          # On force l'environnement à 'local'
+          BACKEND_ENV: "local"
+          BACKEND_LOCAL_DB_HOST: ${{ secrets.LOCAL_DB_HOST }}
+          BACKEND_LOCAL_DB_USER: ${{ secrets.LOCAL_DB_USER }}
+          BACKEND_LOCAL_DB_PASS: ${{ secrets.LOCAL_DB_PASS }}
+          BACKEND_LOCAL_DB_NAME: ${{ secrets.LOCAL_DB_NAME }}
+          BACKEND_LOCAL_DB_PORT: ${{ secrets.LOCAL_DB_PORT }}
+          # Secrets requis par l'initialisation de ta classe Settings
+          BACKEND_JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          BACKEND_JWT_ALGORITHM: "HS256"
+          BACKEND_JWT_EXP_MINUTES: 1440
+          BACKEND_PUBLIC_PATHS: "/login,/register,/docs"
+          BACKEND_USER_PASSWORD_DEFAULT: ${{ secrets.USER_PWD_DEFAULT }}
+          # S3 (Optionnel selon ton code, mais requis si settings.py les lit)
+          BACKEND_AWS_S3_BUCKET: ${{ secrets.AWS_S3_BUCKET }}
+          BACKEND_AWS_REGION: ${{ secrets.AWS_REGION }}
+          BACKEND_AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          BACKEND_AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          
+          script: |
+            cd /home/ubuntu/kassa
+            
+            git pull origin main
+
+            # Génération du .env avec les variables LOCAL
+            cat <<EOF > api_famille_kassatech_org/.env
+            BACKEND_ENV=$BACKEND_ENV
+            BACKEND_LOCAL_DB_HOST=$BACKEND_LOCAL_DB_HOST
+            BACKEND_LOCAL_DB_USER=$BACKEND_LOCAL_DB_USER
+            BACKEND_LOCAL_DB_PASS=$BACKEND_LOCAL_DB_PASS
+            BACKEND_LOCAL_DB_NAME=$BACKEND_LOCAL_DB_NAME
+            BACKEND_LOCAL_DB_PORT=$BACKEND_LOCAL_DB_PORT
+            BACKEND_JWT_SECRET=$BACKEND_JWT_SECRET
+            BACKEND_JWT_ALGORITHM=$BACKEND_JWT_ALGORITHM
+            BACKEND_JWT_EXP_MINUTES=$BACKEND_JWT_EXP_MINUTES
+            BACKEND_PUBLIC_PATHS=$BACKEND_PUBLIC_PATHS
+            BACKEND_USER_PASSWORD_DEFAULT=$BACKEND_USER_PASSWORD_DEFAULT
+            BACKEND_AWS_S3_BUCKET=$BACKEND_AWS_S3_BUCKET
+            BACKEND_AWS_REGION=$BACKEND_AWS_REGION
+            BACKEND_AWS_ACCESS_KEY_ID=$BACKEND_AWS_ACCESS_KEY_ID
+            BACKEND_AWS_SECRET_ACCESS_KEY=$BACKEND_AWS_SECRET_ACCESS_KEY
+            EOF
+
+            # Installation des dépendances dans le venv existant
+            source venv/bin/activate
+            pip install -r requirements.txt
+
+            # Redémarrage du service systemd
+            sudo systemctl restart fastapi_famille_kassa.service
