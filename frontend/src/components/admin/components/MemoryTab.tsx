@@ -20,6 +20,9 @@ type MemoryPayload = {
     percent: number
     rss: number
     proc_percent?: number
+    swap_total?: number
+    swap_used?: number
+    swap_percent?: number
     ts: string
 }
 
@@ -76,6 +79,9 @@ export default function MemoryTab() {
                     rss: { label: 'Process RSS', desc: 'Resident Set Size: memory pages of the backend process that currently reside in RAM (excludes swapped-out memory).' },
                     systemPercent: { label: 'System Memory %', desc: 'Overall system memory utilization percentage across all processes.' },
                     procPercent: { label: 'Backend Process %', desc: 'Share of total system memory consumed by the backend process.' },
+                    swapTotal: { label: 'Swap Total', desc: 'Total swap space available.' },
+                    swapUsed: { label: 'Swap Used', desc: 'Swap space currently used.' },
+                    swapPercent: { label: 'Swap %', desc: 'Percentage of swap space used.' },
                 },
             },
         },
@@ -89,6 +95,9 @@ export default function MemoryTab() {
                     rss: { label: 'RSS du processus', desc: 'Resident Set Size : pages mémoire du processus backend résidant en RAM (hors mémoire swappée).' },
                     systemPercent: { label: 'Mémoire système %', desc: 'Pourcentage global d’utilisation de la mémoire système, tous processus confondus.' },
                     procPercent: { label: 'Processus backend %', desc: 'Part de la mémoire système totale consommée par le processus backend.' },
+                    swapTotal: { label: 'Swap Total', desc: 'Espace d’échange (swap) total disponible.' },
+                    swapUsed: { label: 'Swap Utilisé', desc: 'Espace d’échange actuellement utilisé.' },
+                    swapPercent: { label: 'Swap %', desc: 'Pourcentage d’utilisation du swap.' },
                 },
             },
         },
@@ -107,7 +116,8 @@ export default function MemoryTab() {
     const [isVisible, setIsVisible] = useState<boolean>(false)
     const [sysSeries, setSysSeries] = useState<number[]>([])
     const [procSeries, setProcSeries] = useState<number[]>([])
-    const [infoKey, setInfoKey] = useState<null | 'total' | 'used' | 'rss' | 'systemPercent' | 'procPercent'>(null)
+    const [swapSeries, setSwapSeries] = useState<number[]>([])
+    const [infoKey, setInfoKey] = useState<null | 'total' | 'used' | 'rss' | 'systemPercent' | 'procPercent' | 'swapTotal' | 'swapUsed' | 'swapPercent'>(null)
 
     const wsUrl = useMemo(() => {
         const token = getToken()
@@ -160,6 +170,13 @@ export default function MemoryTab() {
                         if (typeof payload.proc_percent === 'number') {
                             setProcSeries((prev) => {
                                 const next = [...prev, payload.proc_percent as number]
+                                if (next.length > HISTORY) next.shift()
+                                return next
+                            })
+                        }
+                        if (typeof payload.swap_percent === 'number') {
+                            setSwapSeries((prev) => {
+                                const next = [...prev, payload.swap_percent as number]
                                 if (next.length > HISTORY) next.shift()
                                 return next
                             })
@@ -302,6 +319,19 @@ export default function MemoryTab() {
                 </div>
             </div>
 
+            {data && data.swap_percent !== undefined && (
+                <div className="mb-3">
+                    <div className="d-flex justify-content-between">
+                        <strong>{t('memory.metrics.swapPercent.label')}</strong>
+                        <i className="bi bi-info-circle ms-2" role="button" aria-label="info" onClick={() => setInfoKey('swapPercent')}></i>
+                        <span>{data.swap_percent.toFixed(1)}%</span>
+                    </div>
+                    <div className="progress" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={data.swap_percent}>
+                        <div className="progress-bar bg-warning" style={{ width: `${data.swap_percent}%` }} />
+                    </div>
+                </div>
+            )}
+
             {data && (
                 <div className="row g-3">
                     <div className="col-md-6 col-lg-4">
@@ -337,7 +367,36 @@ export default function MemoryTab() {
                             </div>
                         </div>
                     </div>
-                    <div className="col-12 col-lg-6">
+
+                    {data.swap_total !== undefined && (
+                        <div className="col-md-6 col-lg-4">
+                            <div className="card">
+                                <div className="card-body">
+                                    <div className="fw-bold d-flex align-items-center">
+                                        <span>{t('memory.metrics.swapTotal.label')}</span>
+                                        <i className="bi bi-info-circle ms-2" role="button" aria-label="info" onClick={() => setInfoKey('swapTotal')}></i>
+                                    </div>
+                                    <div>{formatBytes(data.swap_total)}</div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                    {data.swap_used !== undefined && (
+                        <div className="col-md-6 col-lg-4">
+                            <div className="card">
+                                <div className="card-body">
+                                    <div className="fw-bold d-flex align-items-center">
+                                        <span>{t('memory.metrics.swapUsed.label')}</span>
+                                        <i className="bi bi-info-circle ms-2" role="button" aria-label="info" onClick={() => setInfoKey('swapUsed')}></i>
+                                    </div>
+                                    <div>{formatBytes(data.swap_used)}</div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                    <div className="col-md-6 col-lg-4 d-none d-lg-block"></div>
+
+                    <div className="col-12 col-lg-4">
                         <div className="card">
                             <div className="card-body">
                                 <div className="d-flex justify-content-between align-items-center mb-2">
@@ -347,11 +406,11 @@ export default function MemoryTab() {
                                     </div>
                                     <div>{(sysSeries.at(-1) ?? data.percent).toFixed(1)}%</div>
                                 </div>
-                                <Sparkline data={sysSeries.length ? sysSeries : [data.percent]} width={360} height={80} color="#0d6efd" />
+                                <Sparkline data={sysSeries.length ? sysSeries : [data.percent]} width={240} height={60} color="#0d6efd" />
                             </div>
                         </div>
                     </div>
-                    <div className="col-12 col-lg-6">
+                    <div className="col-12 col-lg-4">
                         <div className="card">
                             <div className="card-body">
                                 <div className="d-flex justify-content-between align-items-center mb-2">
@@ -361,10 +420,26 @@ export default function MemoryTab() {
                                     </div>
                                     <div>{(procSeries.at(-1) ?? (data.proc_percent ?? 0)).toFixed(2)}%</div>
                                 </div>
-                                <Sparkline data={procSeries.length ? procSeries : [data.proc_percent ?? 0]} width={360} height={80} color="#20c997" />
+                                <Sparkline data={procSeries.length ? procSeries : [data.proc_percent ?? 0]} width={240} height={60} color="#20c997" />
                             </div>
                         </div>
                     </div>
+                    {data.swap_percent !== undefined && (
+                        <div className="col-12 col-lg-4">
+                            <div className="card">
+                                <div className="card-body">
+                                    <div className="d-flex justify-content-between align-items-center mb-2">
+                                        <div className="fw-bold d-flex align-items-center">
+                                            <span>{t('memory.metrics.swapPercent.label')}</span>
+                                            <i className="bi bi-info-circle ms-2" role="button" aria-label="info" onClick={() => setInfoKey('swapPercent')}></i>
+                                        </div>
+                                        <div>{(swapSeries.at(-1) ?? data.swap_percent).toFixed(1)}%</div>
+                                    </div>
+                                    <Sparkline data={swapSeries.length ? swapSeries : [data.swap_percent]} width={240} height={60} color="#ffc107" />
+                                </div>
+                            </div>
+                        </div>
+                    )}
                 </div>
             )}
 
