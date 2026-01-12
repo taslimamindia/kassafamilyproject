@@ -1,4 +1,4 @@
-name: Deploy Backend to Lightsail (Final Fix)
+name: Deploy Backend to Lightsail (Strict Secrets)
 
 on:
   pull_request:
@@ -17,97 +17,133 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Deploy via SSH
+      - name: Deploy and Configure Env
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.BACKEND_SSH_HOST }}
           username: ${{ secrets.BACKEND_SSH_USER }}
           key: ${{ secrets.BACKEND_SSH_PRIVATE_KEY }}
           port: 22
+          # Liste exhaustive des variables à transmettre depuis GitHub Secrets 
           envs: >-
-            BACKEND_ENV,BACKEND_ONLINE_DB_HOST,BACKEND_ONLINE_DB_USER,
+            BACKEND_ENV,BACKEND_DB_VIA_SSH,BACKEND_SSH_PORT,BACKEND_SSH_USER,
+            BACKEND_SSH_KEY_PATH,BACKEND_ONLINE_DB_HOST,BACKEND_ONLINE_DB_USER,
             BACKEND_ONLINE_DB_PASS,BACKEND_ONLINE_DB_NAME,BACKEND_ONLINE_DB_PORT,
+            BACKEND_LOCAL_DB_HOST,BACKEND_LOCAL_DB_USER,BACKEND_LOCAL_DB_PASS,
+            BACKEND_LOCAL_DB_NAME,BACKEND_LOCAL_DB_PORT,BACKEND_ADMIN_USERNAME,
+            BACKEND_ADMIN_EMAIL,BACKEND_ADMIN_TELEPHONE,BACKEND_ADMIN_PASSWORD,
             BACKEND_JWT_SECRET,BACKEND_JWT_ALGORITHM,BACKEND_JWT_EXP_MINUTES,
-            BACKEND_PUBLIC_PATHS,BACKEND_USER_PASSWORD_DEFAULT,
-            BACKEND_AWS_S3_BUCKET,BACKEND_AWS_REGION,BACKEND_AWS_ACCESS_KEY_ID,
-            BACKEND_AWS_SECRET_ACCESS_KEY,BACKEND_AWS_BASE_FOLDER
+            BACKEND_USER_PASSWORD_DEFAULT,BACKEND_PUBLIC_PATHS,
+            BACKEND_AWS_ACCESS_KEY_ID,BACKEND_AWS_SECRET_ACCESS_KEY,
+            BACKEND_AWS_REGION,BACKEND_AWS_S3_BUCKET,BACKEND_AWS_BASE_FOLDER
           script: |
+            # --- GESTION DES ERREURS ---
             set -e 
 
             TARGET_DIR="/home/ubuntu/kassa/api_famille_kassatech_org"
             ROOT_DIR="/home/ubuntu/kassa"
-            TEMP_GIT="/home/ubuntu/kassa/temp_deploy"
+            TEMP_GIT="/home/ubuntu/kassa/temp_git_clone"
             REPO_URL="https://github.com/${{ github.repository }}.git"
 
-            # 1. Droits et Nettoyage
-            sudo chown -R ubuntu:ubuntu $ROOT_DIR
-            rm -rf $TEMP_GIT && mkdir -p $TEMP_GIT
+            echo "🚀 Déploiement ciblé du contenu de /backend..."
 
-            # 2. Extraction du dossier backend uniquement
+            # 1. Correction des permissions
+            sudo chown -R ubuntu:ubuntu $ROOT_DIR
+
+            # 2. Utilisation du Sparse Checkout pour ne récupérer que /backend
+            rm -rf $TEMP_GIT && mkdir -p $TEMP_GIT
             cd $TEMP_GIT
             git init
             git remote add origin $REPO_URL
             git config core.sparseCheckout true
             echo "backend/" >> .git/info/sparse-checkout
+            
             git fetch origin main
             git reset --hard origin/main
 
-            # 3. Injection à plat (contenu de backend/ vers TARGET_DIR)
+            # 3. Injection du CONTENU de backend/ directement dans TARGET_DIR
             mkdir -p $TARGET_DIR
             rsync -av --delete $TEMP_GIT/backend/ $TARGET_DIR/
             rm -rf $TEMP_GIT
 
-            # 4. Génération du .env avec les noms de variables exacts
-            echo "Génération du fichier .env..."
+            # 4. Génération du fichier .env basé sur les secrets transmis 
+            echo "⚙️  Génération du fichier .env..."
             cat <<EOF > $TARGET_DIR/.env
-            BACKEND_ENV=local
+            BACKEND_ENV=$BACKEND_ENV
+            BACKEND_DB_VIA_SSH=$BACKEND_DB_VIA_SSH
+            BACKEND_SSH_PORT=$BACKEND_SSH_PORT
+            BACKEND_SSH_USER=$BACKEND_SSH_USER
+            BACKEND_SSH_KEY_PATH=$BACKEND_SSH_KEY_PATH
             BACKEND_ONLINE_DB_HOST=$BACKEND_ONLINE_DB_HOST
             BACKEND_ONLINE_DB_USER=$BACKEND_ONLINE_DB_USER
             BACKEND_ONLINE_DB_PASS=$BACKEND_ONLINE_DB_PASS
             BACKEND_ONLINE_DB_NAME=$BACKEND_ONLINE_DB_NAME
             BACKEND_ONLINE_DB_PORT=$BACKEND_ONLINE_DB_PORT
+            BACKEND_LOCAL_DB_HOST=$BACKEND_LOCAL_DB_HOST
+            BACKEND_LOCAL_DB_USER=$BACKEND_LOCAL_DB_USER
+            BACKEND_LOCAL_DB_PASS=$BACKEND_LOCAL_DB_PASS
+            BACKEND_LOCAL_DB_NAME=$BACKEND_LOCAL_DB_NAME
+            BACKEND_LOCAL_DB_PORT=$BACKEND_LOCAL_DB_PORT
+            BACKEND_ADMIN_USERNAME=$BACKEND_ADMIN_USERNAME
+            BACKEND_ADMIN_EMAIL=$BACKEND_ADMIN_EMAIL
+            BACKEND_ADMIN_TELEPHONE=$BACKEND_ADMIN_TELEPHONE
+            BACKEND_ADMIN_PASSWORD=$BACKEND_ADMIN_PASSWORD
             BACKEND_JWT_SECRET=$BACKEND_JWT_SECRET
             BACKEND_JWT_ALGORITHM=$BACKEND_JWT_ALGORITHM
             BACKEND_JWT_EXP_MINUTES=$BACKEND_JWT_EXP_MINUTES
-            BACKEND_PUBLIC_PATHS=$BACKEND_PUBLIC_PATHS
             BACKEND_USER_PASSWORD_DEFAULT=$BACKEND_USER_PASSWORD_DEFAULT
-            BACKEND_AWS_S3_BUCKET=$BACKEND_AWS_S3_BUCKET
-            BACKEND_AWS_REGION=$BACKEND_AWS_REGION
+            BACKEND_PUBLIC_PATHS=$BACKEND_PUBLIC_PATHS
             BACKEND_AWS_ACCESS_KEY_ID=$BACKEND_AWS_ACCESS_KEY_ID
             BACKEND_AWS_SECRET_ACCESS_KEY=$BACKEND_AWS_SECRET_ACCESS_KEY
+            BACKEND_AWS_REGION=$BACKEND_AWS_REGION
+            BACKEND_AWS_S3_BUCKET=$BACKEND_AWS_S3_BUCKET
             BACKEND_AWS_BASE_FOLDER=$BACKEND_AWS_BASE_FOLDER
             EOF
 
-            # 5. Dépendances et Redémarrage
+            # 5. Mise à jour des dépendances
             cd $ROOT_DIR
             source venv/bin/activate
             pip install -r $TARGET_DIR/requirements.txt
-            
-            echo "Redémarrage du service..."
+
+            # 6. Redémarrage et Validation
+            echo "🔄 Redémarrage du service..."
             sudo systemctl restart fastapi_famille_kassa.service
             
-            sleep 3
+            sleep 2
             if ! sudo systemctl is-active --quiet fastapi_famille_kassa.service; then
-                echo "❌ ÉCHEC : Le service ne démarre pas. Logs :"
-                sudo journalctl -u fastapi_famille_kassa.service -n 20 --no-pager
+                echo "❌ ERREUR : Le service n'est pas actif."
+                sudo systemctl status fastapi_famille_kassa.service --no-pager
                 exit 1
             fi
-            echo "✅ Succès !"
+            echo "✅ Déploiement réussi."
 
         env:
-          BACKEND_ENV: "local"
+          BACKEND_ENV: ${{ secrets.BACKEND_ENV }}
+          BACKEND_DB_VIA_SSH: ${{ secrets.BACKEND_DB_VIA_SSH }}
+          BACKEND_SSH_PORT: ${{ secrets.BACKEND_SSH_PORT }}
+          BACKEND_SSH_USER: ${{ secrets.BACKEND_SSH_USER }}
+          BACKEND_SSH_KEY_PATH: ${{ secrets.BACKEND_SSH_KEY_PATH }}
           BACKEND_ONLINE_DB_HOST: ${{ secrets.BACKEND_ONLINE_DB_HOST }}
           BACKEND_ONLINE_DB_USER: ${{ secrets.BACKEND_ONLINE_DB_USER }}
           BACKEND_ONLINE_DB_PASS: ${{ secrets.BACKEND_ONLINE_DB_PASS }}
           BACKEND_ONLINE_DB_NAME: ${{ secrets.BACKEND_ONLINE_DB_NAME }}
           BACKEND_ONLINE_DB_PORT: ${{ secrets.BACKEND_ONLINE_DB_PORT }}
-          BACKEND_JWT_SECRET: ${{ secrets.JWT_SECRET }}
-          BACKEND_JWT_ALGORITHM: "HS256"
-          BACKEND_JWT_EXP_MINUTES: 60
-          BACKEND_PUBLIC_PATHS: "/login,/register"
-          BACKEND_USER_PASSWORD_DEFAULT: ${{ secrets.USER_PWD_DEFAULT }}
-          BACKEND_AWS_S3_BUCKET: ${{ secrets.AWS_S3_BUCKET }}
-          BACKEND_AWS_REGION: ${{ secrets.AWS_REGION }}
-          BACKEND_AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          BACKEND_AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          BACKEND_AWS_BASE_FOLDER: "kassa-uploads"
+          BACKEND_LOCAL_DB_HOST: ${{ secrets.BACKEND_LOCAL_DB_HOST }}
+          BACKEND_LOCAL_DB_USER: ${{ secrets.BACKEND_LOCAL_DB_USER }}
+          BACKEND_LOCAL_DB_PASS: ${{ secrets.BACKEND_LOCAL_DB_PASS }}
+          BACKEND_LOCAL_DB_NAME: ${{ secrets.BACKEND_LOCAL_DB_NAME }}
+          BACKEND_LOCAL_DB_PORT: ${{ secrets.BACKEND_LOCAL_DB_PORT }}
+          BACKEND_ADMIN_USERNAME: ${{ secrets.BACKEND_ADMIN_USERNAME }}
+          BACKEND_ADMIN_EMAIL: ${{ secrets.BACKEND_ADMIN_EMAIL }}
+          BACKEND_ADMIN_TELEPHONE: ${{ secrets.BACKEND_ADMIN_TELEPHONE }}
+          BACKEND_ADMIN_PASSWORD: ${{ secrets.BACKEND_ADMIN_PASSWORD }}
+          BACKEND_JWT_SECRET: ${{ secrets.BACKEND_JWT_SECRET }}
+          BACKEND_JWT_ALGORITHM: ${{ secrets.BACKEND_JWT_ALGORITHM }}
+          BACKEND_JWT_EXP_MINUTES: ${{ secrets.BACKEND_JWT_EXP_MINUTES }}
+          BACKEND_USER_PASSWORD_DEFAULT: ${{ secrets.BACKEND_USER_PASSWORD_DEFAULT }}
+          BACKEND_PUBLIC_PATHS: ${{ secrets.BACKEND_PUBLIC_PATHS }}
+          BACKEND_AWS_ACCESS_KEY_ID: ${{ secrets.BACKEND_AWS_ACCESS_KEY_ID }}
+          BACKEND_AWS_SECRET_ACCESS_KEY: ${{ secrets.BACKEND_AWS_SECRET_ACCESS_KEY }}
+          BACKEND_AWS_REGION: ${{ secrets.BACKEND_AWS_REGION }}
+          BACKEND_AWS_S3_BUCKET: ${{ secrets.BACKEND_AWS_S3_BUCKET }}
+          BACKEND_AWS_BASE_FOLDER: ${{ secrets.BACKEND_AWS_BASE_FOLDER }}
