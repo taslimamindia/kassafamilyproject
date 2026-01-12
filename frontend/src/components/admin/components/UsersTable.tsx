@@ -1,5 +1,5 @@
 import { useMemo, useState, useEffect } from 'react'
-import { updateUserById, getCurrentUser, getUserById, type User } from '../../../services/users'
+import { updateUserById, getCurrentUser, getUserById, deleteUser, type User } from '../../../services/users'
 import { getRolesForUser } from '../../../services/roleAttributions'
 import FilterBar from '../../common/FilterBar'
 import { useTranslation } from 'react-i18next'
@@ -26,7 +26,9 @@ const usersTableResources = {
             },
             noneFound: 'Aucun utilisateur trouvé',
             confirmDelete: 'Supprimer (désactiver) cet utilisateur ?',
+            confirmHardDelete: 'Êtes-vous sûr de vouloir supprimer définitivement cet utilisateur ? Cette action est irréversible.',
             deactivateError: 'Erreur lors de la désactivation',
+            deleteError: 'Erreur lors de la suppression',
             fields: { tel: 'Tél', born: 'Né(e)' },
             card: {
                 active: 'Actif',
@@ -35,6 +37,7 @@ const usersTableResources = {
                 notFirst: 'Non',
                 edit: 'Modifier',
                 deactivate: 'Désactiver',
+                delete: 'Supprimer',
                 showParents: 'Voir les parents',
                 hideParents: 'Masquer les parents',
                 parentsTitle: 'Parents',
@@ -62,7 +65,9 @@ const usersTableResources = {
             },
             noneFound: 'No users found',
             confirmDelete: 'Delete (deactivate) this user?',
+            confirmHardDelete: 'Are you sure you want to permanently delete this user? This action cannot be undone.',
             deactivateError: 'Error while deactivating',
+            deleteError: 'Error while deleting',
             fields: { tel: 'Tel', born: 'Born' },
             card: {
                 active: 'Active',
@@ -71,6 +76,7 @@ const usersTableResources = {
                 notFirst: 'No',
                 edit: 'Edit',
                 deactivate: 'Deactivate',
+                delete: 'Delete',
                 showParents: 'Show parents',
                 hideParents: 'Hide parents',
                 parentsTitle: 'Parents',
@@ -98,7 +104,9 @@ const usersTableResources = {
             },
             noneFound: 'لم يتم العثور على مستخدمين',
             confirmDelete: 'حذف (تعطيل) هذا المستخدم؟',
+            confirmHardDelete: 'هل أنت متأكد أنك تريد حذف هذا المستخدم نهائيًا؟ هذا الإجراء لا يمكن التراجع عنه.',
             deactivateError: 'خطأ أثناء التعطيل',
+            deleteError: 'خطأ أثناء الحذف',
             fields: { tel: 'هاتف', born: 'مولود' },
             card: {
                 active: 'نشط',
@@ -107,6 +115,7 @@ const usersTableResources = {
                 notFirst: 'لا',
                 edit: 'تعديل',
                 deactivate: 'تعطيل',
+                delete: 'حذف',
                 showParents: 'عرض الوالدين',
                 hideParents: 'إخفاء الوالدين',
                 parentsTitle: 'الوالدان',
@@ -127,7 +136,7 @@ function getInitials(firstname?: string, lastname?: string): string {
     return initials.slice(0, 3) || '?'
 }
 
-function UserCard({ user, isViewerAdmin, onEdit, onDelete }: { user: User, isViewerAdmin: boolean, onEdit: (u: User) => void, onDelete: (id: number) => void }) {
+function UserCard({ user, isViewerAdmin, onEdit, onDelete, onHardDelete }: { user: User, isViewerAdmin: boolean, onEdit: (u: User) => void, onDelete: (id: number) => void, onHardDelete: (id: number) => void }) {
     const { t } = useTranslation()
     const rawActive = (user as any).isactive
     const rawFirst = (user as any).isfirstlogin
@@ -212,11 +221,16 @@ function UserCard({ user, isViewerAdmin, onEdit, onDelete }: { user: User, isVie
                     <button className="btn btn-sm btn-primary w-100" onClick={() => onEdit(user)}>
                         <i className="bi bi-pencil me-1"></i>{t('users.card.edit')}
                     </button>
-                    {isActive && (
-                        <button className="btn btn-sm btn-outline-danger w-100" onClick={() => onDelete(user.id)}>
-                            <i className="bi bi-trash me-1"></i>{t('users.card.deactivate')}
+                    {isActive ? (
+                        <button className="btn btn-sm btn-outline-warning w-100 text-dark" onClick={() => onDelete(user.id)}>
+                            <i className="bi bi-power me-1"></i>{t('users.card.deactivate')}
                         </button>
-                    )}
+                    ) : (isViewerAdmin ? (
+                        <button className="btn btn-sm btn-danger w-100" onClick={() => onHardDelete(user.id)}>
+                            <i className="bi bi-trash me-1"></i>{t('users.card.delete')}
+                        </button>
+                    ) : null)}
+                    
                     <button className="btn btn-sm btn-outline-secondary w-100" onClick={toggleParents}>
                         <i className={`bi ${showParents ? 'bi-eye-slash' : 'bi-people'} me-1`}></i>
                         {showParents ? t('users.card.hideParents') : t('users.card.showParents')}
@@ -300,9 +314,21 @@ export default function UsersTable({
         if (!confirm(t('users.confirmDelete'))) return
         try {
             await updateUserById(id, { isactive: 0 })
+            // Notify parent to refresh
             onDeleted(id)
         } catch (e) {
             setError(t('users.deactivateError'))
+        }
+    }
+
+    async function onHardDelete(id: number) {
+        if (!confirm(t('users.confirmHardDelete'))) return
+        try {
+            await deleteUser(id, true)
+            // Notify parent to refresh
+            onDeleted(id)
+        } catch (e) {
+            setError(t('users.deleteError'))
         }
     }
 
@@ -378,6 +404,7 @@ export default function UsersTable({
                         key={u.id}
                         user={u}                        isViewerAdmin={isViewerAdmin}                        onEdit={onEdit}
                         onDelete={onDelete}
+                        onHardDelete={onHardDelete}
                     />
                 ))}
                 {sortedUsers.length === 0 && (

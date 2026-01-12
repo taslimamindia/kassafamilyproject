@@ -14,13 +14,11 @@ for (const [lng, res] of Object.entries(modalResources)) {
 
 export default function Modal({
     isOpen,
-    title,
     onClose,
     children,
     size,
 }: {
     isOpen: boolean
-    title?: string
     onClose: () => void
     children: React.ReactNode
     size?: 'sm' | 'lg' | 'xl'
@@ -53,7 +51,6 @@ export default function Modal({
                 <div className={dialogClass} onClick={e => e.stopPropagation()}>
                     <div className="modal-content">
                         <div className="modal-header">
-                            <h5 className="modal-title">{title}</h5>
                             <button type="button" className="btn-close" aria-label={t('common.close')} onClick={onClose}></button>
                         </div>
                         <div className="modal-body">

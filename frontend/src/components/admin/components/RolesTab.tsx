@@ -85,7 +85,7 @@ export default function RolesTab() {
              <div className="d-flex admin-actions mb-3">
                 <button className="btn btn-primary" onClick={startCreate}>
                     <i className="bi bi-plus-lg me-1" aria-hidden="true"></i>
-                    {t('roles.addRole')}
+                    {t('roles.createRole')}
                 </button>
                 <button className="btn btn-outline-secondary ms-2" onClick={refresh} disabled={loading}>
                     <i className="bi bi-arrow-clockwise me-1" aria-hidden="true"></i>
@@ -114,7 +114,6 @@ export default function RolesTab() {
 
             <Modal
                 isOpen={isEditing}
-                title={editingId === 0 ? t('roles.createRole') : t('roles.editRole')}
                 onClose={cancelEdit} 
             >
                 {isEditing && (

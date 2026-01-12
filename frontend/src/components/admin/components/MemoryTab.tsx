@@ -101,6 +101,10 @@ export default function MemoryTab() {
     const [status, setStatus] = useState<'connecting' | 'open' | 'closed' | 'error'>('connecting')
     const wsRef = useRef<WebSocket | null>(null)
     const reconnectTimer = useRef<number | null>(null)
+    const heartbeatTimer = useRef<number | null>(null)
+    const shouldReconnect = useRef<boolean>(true)
+    const containerRef = useRef<HTMLDivElement | null>(null)
+    const [isVisible, setIsVisible] = useState<boolean>(false)
     const [sysSeries, setSysSeries] = useState<number[]>([])
     const [procSeries, setProcSeries] = useState<number[]>([])
     const [infoKey, setInfoKey] = useState<null | 'total' | 'used' | 'rss' | 'systemPercent' | 'procPercent'>(null)
@@ -115,12 +119,33 @@ export default function MemoryTab() {
     }, [])
 
     useEffect(() => {
+        function startHeartbeat() {
+            // Send lightweight ping every 15s so backend can detect idle clients
+            if (heartbeatTimer.current) return
+            heartbeatTimer.current = window.setInterval(() => {
+                const ws = wsRef.current
+                if (ws && ws.readyState === WebSocket.OPEN) {
+                    try { ws.send("ping") } catch {}
+                }
+            }, 15000)
+        }
+
+        function stopHeartbeat() {
+            if (heartbeatTimer.current) {
+                try { window.clearInterval(heartbeatTimer.current) } catch {}
+                heartbeatTimer.current = null
+            }
+        }
+
         function connect() {
             try {
                 setStatus('connecting')
                 const ws = new WebSocket(wsUrl)
                 wsRef.current = ws
-                ws.onopen = () => setStatus('open')
+                ws.onopen = () => {
+                    setStatus('open')
+                    startHeartbeat()
+                }
                 ws.onmessage = (ev) => {
                     try {
                         const payload = JSON.parse(ev.data) as MemoryPayload
@@ -145,8 +170,9 @@ export default function MemoryTab() {
                 }
                 ws.onclose = () => {
                     setStatus('closed')
+                    stopHeartbeat()
                     // Attempt reconnect after short delay
-                    if (!reconnectTimer.current) {
+                    if (shouldReconnect.current && !reconnectTimer.current) {
                         reconnectTimer.current = window.setTimeout(() => {
                             reconnectTimer.current = null
                             connect()
@@ -158,23 +184,103 @@ export default function MemoryTab() {
                 setStatus('error')
             }
         }
-        connect()
+        // Connect only when this tab/component is visible
+        if (isVisible) {
+            connect()
+        } else {
+            setStatus('closed')
+        }
+        // Handle page visibility: close socket when tab hidden, reconnect when visible
+        function handleVisibility() {
+            if (document.hidden) {
+                shouldReconnect.current = false
+                stopHeartbeat()
+                if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+                    try { wsRef.current.close() } catch {}
+                }
+                if (reconnectTimer.current) {
+                    try { window.clearTimeout(reconnectTimer.current) } catch {}
+                    reconnectTimer.current = null
+                }
+            } else {
+                shouldReconnect.current = true
+                if (!wsRef.current || wsRef.current.readyState === WebSocket.CLOSED) {
+                    connect()
+                }
+            }
+        }
+        document.addEventListener('visibilitychange', handleVisibility)
+        // Ensure closure on page unload
+        function handleUnload() {
+            shouldReconnect.current = false
+            stopHeartbeat()
+            if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+                try { wsRef.current.close() } catch {}
+            }
+            if (reconnectTimer.current) {
+                try { window.clearTimeout(reconnectTimer.current) } catch {}
+                reconnectTimer.current = null
+            }
+        }
+        window.addEventListener('pagehide', handleUnload)
+        window.addEventListener('beforeunload', handleUnload)
         return () => {
             if (reconnectTimer.current) {
                 window.clearTimeout(reconnectTimer.current)
                 reconnectTimer.current = null
             }
+            if (heartbeatTimer.current) {
+                window.clearInterval(heartbeatTimer.current)
+                heartbeatTimer.current = null
+            }
             if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
                 try { wsRef.current.close() } catch {}
             }
             wsRef.current = null
+            shouldReconnect.current = false
+            document.removeEventListener('visibilitychange', handleVisibility)
+            window.removeEventListener('pagehide', handleUnload)
+            window.removeEventListener('beforeunload', handleUnload)
         }
-    }, [wsUrl])
+    }, [wsUrl, isVisible])
+
+    // Observe component visibility within the page to control connection
+    useEffect(() => {
+        const el = containerRef.current
+        if (!el) return
+        const observer = new IntersectionObserver((entries) => {
+            const entry = entries[0]
+            const visible = entry.isIntersecting && entry.intersectionRatio > 0
+            setIsVisible(visible)
+            // If it becomes hidden, ensure socket is closed and no auto-reconnect
+            if (!visible) {
+                shouldReconnect.current = false
+                if (heartbeatTimer.current) {
+                    try { window.clearInterval(heartbeatTimer.current) } catch {}
+                    heartbeatTimer.current = null
+                }
+                if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+                    try { wsRef.current.close() } catch {}
+                }
+                if (reconnectTimer.current) {
+                    try { window.clearTimeout(reconnectTimer.current) } catch {}
+                    reconnectTimer.current = null
+                }
+            } else {
+                // When visible again, allow reconnection via effect above
+                shouldReconnect.current = true
+            }
+        }, { root: null, threshold: 0 })
+        observer.observe(el)
+        return () => {
+            observer.disconnect()
+        }
+    }, [])
 
     const percent = data?.percent ?? 0
 
     return (
-        <div className="p-3">
+        <div className="p-3" ref={containerRef}>
             <div className="d-flex align-items-center gap-2 mb-3">
                 <span className="badge text-bg-secondary">{t('memory.ws')}: {status}</span>
                 {data && <span className="badge text-bg-info">{t('memory.updated')}: {new Date(data.ts).toLocaleTimeString()}</span>}

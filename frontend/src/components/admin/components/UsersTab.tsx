@@ -117,7 +117,6 @@ export default function UsersTab({
 
             <Modal
                 isOpen={isEditing}
-                title={editingId === 0 ? t('common.create') + ' ' + t('nav.users') : t('common.edit') + ' ' + t('nav.users')}
                 onClose={cancelEdit}
                 size="lg"
             >

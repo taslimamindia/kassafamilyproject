@@ -50,6 +50,7 @@ export async function getUserById(id: number): Promise<User> {
 export async function createUser(user: {
     firstname: string
     lastname: string
+    username?: string
     email?: string
     telephone?: string
     birthday?: string
@@ -81,8 +82,11 @@ export async function updateUserById(id: number, partial: Partial<User> & {
     return (await res.json()) as User
 }
 
-export async function deleteUser(id: number): Promise<{ status: string; id: number }> {
-    const res = await apiFetch(`/users/${id}`, { method: 'DELETE' })
+export async function deleteUser(id: number, hard: boolean = false): Promise<{ status: string; id: number }> {
+    const params = new URLSearchParams()
+    if (hard) params.set('hard', 'true')
+    const query = params.toString()
+    const res = await apiFetch(`/users/${id}${query ? `?${query}` : ''}`, { method: 'DELETE' })
     if (!res.ok) throw new Error('DELETE /users/{id} failed')
     return (await res.json()) as { status: string; id: number }
 }
@@ -90,6 +94,7 @@ export async function deleteUser(id: number): Promise<{ status: string; id: numb
 export async function createUserWithImage(fields: {
     firstname: string
     lastname: string
+    username?: string
     email?: string
     telephone?: string
     birthday?: string
@@ -102,6 +107,7 @@ export async function createUserWithImage(fields: {
     form.append('firstname', fields.firstname)
     form.append('lastname', fields.lastname)
     form.append('with_image', '1')
+    if (fields.username) form.append('username', String(fields.username))
     if (fields.email) form.append('email', fields.email)
     if (fields.telephone) form.append('telephone', fields.telephone)
     if (fields.birthday) form.append('birthday', fields.birthday)
