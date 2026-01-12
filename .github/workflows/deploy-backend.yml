@@ -24,7 +24,6 @@ jobs:
           username: ${{ secrets.BACKEND_SSH_USER }}
           key: ${{ secrets.BACKEND_SSH_PRIVATE_KEY }}
           port: 22
-          # Liste des variables à transmettre du runner GitHub vers l'instance SSH
           envs: >-
             BACKEND_ENV,
             BACKEND_LOCAL_DB_HOST,
@@ -42,29 +41,42 @@ jobs:
             BACKEND_AWS_ACCESS_KEY_ID,
             BACKEND_AWS_SECRET_ACCESS_KEY
           script: |
-            # 1. Variables de chemins
+            # --- GESTION DES ERREURS ---
+            # Arrête le script dès qu'une commande échoue
+            set -e 
+
             TARGET_DIR="/home/ubuntu/kassa/api_famille_kassatech_org"
             ROOT_DIR="/home/ubuntu/kassa"
+            
+            # Utilisation d'un token pour l'accès au dépôt privé (si nécessaire)
+            # Remplacez GITHUB_TOKEN par un secret si le dépôt est privé
+            REPO_URL="https://github.com/${{ github.repository }}.git"
 
-            # 2. Correction des permissions et sécurité Git
-            # On s'assure que l'utilisateur 'ubuntu' est propriétaire de tout le projet
+            echo "Début du déploiement..."
+
+            # 1. Correction des permissions
             sudo chown -R ubuntu:ubuntu $ROOT_DIR
-            # On autorise Git à travailler dans ce dossier (évite l'erreur 'dubious ownership')
             git config --global --add safe.directory $TARGET_DIR
 
-            # 3. Initialisation ou Mise à jour du code source
+            # 2. Gestion du dépôt Git
             if [ ! -d "$TARGET_DIR/.git" ]; then
-              echo "Dossier .git absent. Clonage du dépôt..."
+              echo "Dossier .git absent. Clonage initial..."
+              sudo rm -rf $TARGET_DIR 
               mkdir -p $TARGET_DIR
-              git clone https://github.com/${{ github.repository }}.git $TARGET_DIR
+              git clone $REPO_URL $TARGET_DIR
             fi
 
             cd $TARGET_DIR
-            echo "Mise à jour du code (reset hard)..."
+
+            # Reconfiguration forcée du remote
+            git remote remove origin || true
+            git remote add origin $REPO_URL
+
+            echo "Mise à jour du code..."
             git fetch origin main
             git reset --hard origin/main
 
-            # 4. Création du fichier .env
+            # 3. Génération du fichier .env
             echo "Génération du fichier .env..."
             cat <<EOF > .env
             BACKEND_ENV=$BACKEND_ENV
@@ -84,26 +96,23 @@ jobs:
             BACKEND_AWS_SECRET_ACCESS_KEY=$BACKEND_AWS_SECRET_ACCESS_KEY
             EOF
 
-            # 5. Mise à jour des dépendances Python
+            # 4. Dépendances
             cd $ROOT_DIR
-            if [ -f "venv/bin/activate" ]; then
-              source venv/bin/activate
-              pip install -r requirements.txt
-            else
-              echo "ERREUR : Environnement virtuel introuvable dans $ROOT_DIR/venv"
-              exit 1
+            if [ ! -f "venv/bin/activate" ]; then
+               echo "Erreur : Environnement virtuel introuvable."
+               exit 1
             fi
+            source venv/bin/activate
+            pip install -r requirements.txt
 
-            # 6. Redémarrage du service systemd
-            echo "Redémarrage du service FastAPI..."
+            # 5. Redémarrage
+            echo "Redémarrage du service..."
             sudo systemctl restart fastapi_famille_kassa.service
 
-            # 7. Vérification finale
-            echo "Statut du service :"
-            sudo systemctl status fastapi_famille_kassa.service --no-pager
-            echo "Déploiement terminé avec succès."
+            # 6. Vérification finale du statut (si status != 0, le workflow échoue)
+            sudo systemctl is-active --quiet fastapi_famille_kassa.service
+            echo "Le service est actif. Déploiement réussi."
 
-        # Mapping entre Secrets GitHub et Variables d'environnement
         env:
           BACKEND_ENV: "local"
           BACKEND_LOCAL_DB_HOST: ${{ secrets.BACKEND_ONLINE_DB_HOST }}
