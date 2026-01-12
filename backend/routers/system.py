@@ -142,6 +142,7 @@ async def memory_ws(websocket: WebSocket):
                         pass
                     break
                 vm = psutil.virtual_memory()
+                swap = psutil.swap_memory()
                 rss = proc.memory_info().rss
                 proc_percent = proc.memory_percent()
                 await websocket.send_json(
@@ -150,6 +151,9 @@ async def memory_ws(websocket: WebSocket):
                         "available": vm.available,
                         "used": vm.used,
                         "percent": vm.percent,
+                        "swap_total": swap.total,
+                        "swap_used": swap.used,
+                        "swap_percent": swap.percent,
                         "rss": rss,
                         "proc_percent": proc_percent,
                         "ts": datetime.utcnow().isoformat() + "Z",
