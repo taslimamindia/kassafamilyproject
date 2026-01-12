@@ -130,13 +130,20 @@ for (const [lng, res] of Object.entries(usersTableResources)) {
     i18n.addResourceBundle(lng, 'translation', res as any, true, false)
 }
 
+function appendCacheBust(url?: string, token?: number): string | undefined {
+    if (!url) return url
+    if (!token) return url
+    const sep = url.includes('?') ? '&' : '?'
+    return `${url}${sep}cb=${token}`
+}
+
 function getInitials(firstname?: string, lastname?: string): string {
     const parts = `${firstname ?? ''} ${lastname ?? ''}`.trim().split(/\s+/).filter(Boolean)
     const initials = parts.map(p => p.charAt(0).toUpperCase()).join('')
     return initials.slice(0, 3) || '?'
 }
 
-function UserCard({ user, isViewerAdmin, onEdit, onDelete, onHardDelete }: { user: User, isViewerAdmin: boolean, onEdit: (u: User) => void, onDelete: (id: number) => void, onHardDelete: (id: number) => void }) {
+function UserCard({ user, isViewerAdmin, imageBustToken, onEdit, onDelete, onHardDelete }: { user: User, isViewerAdmin: boolean, imageBustToken: number, onEdit: (u: User) => void, onDelete: (id: number) => void, onHardDelete: (id: number) => void }) {
     const { t } = useTranslation()
     const rawActive = (user as any).isactive
     const rawFirst = (user as any).isfirstlogin
@@ -173,7 +180,7 @@ function UserCard({ user, isViewerAdmin, onEdit, onDelete, onHardDelete }: { use
                     <div className="mx-auto rounded-circle d-flex align-items-center justify-content-center overflow-hidden"
                         style={{ width: '110px', height: '110px', background: 'radial-gradient( circle at 30% 30%, #ffe0f0, #e6f7ff )' }}>
                         {user.image_url ? (
-                            <img src={user.image_url} alt={`${user.firstname} ${user.lastname}`} className="w-100 h-100" style={{ objectFit: 'cover' }} />
+                            <img src={appendCacheBust(user.image_url, imageBustToken)} alt={`${user.firstname} ${user.lastname}`} className="w-100 h-100" style={{ objectFit: 'cover' }} />
                         ) : (
                             <span className="fw-bold" style={{ fontSize: '2rem', letterSpacing: '0.08rem' }}>
                                 {getInitials(user.firstname, user.lastname)}
@@ -280,6 +287,7 @@ export default function UsersTable({
     onQueryChange,
     onStatusFilterChange,
     onFirstLoginFilterChange,
+    imageBustToken,
 }: {
     users: User[]
     onEdit: (user: User) => void
@@ -290,6 +298,7 @@ export default function UsersTable({
     onQueryChange: (q: string) => void
     onStatusFilterChange: (s: 'all' | 'active' | 'inactive') => void
     onFirstLoginFilterChange: (f: 'all' | 'yes' | 'no') => void
+    imageBustToken: number
 }) {
     const { t } = useTranslation()
     const [error, setError] = useState<string | null>(null)
@@ -402,7 +411,7 @@ export default function UsersTable({
                 {sortedUsers.map(u => (
                     <UserCard
                         key={u.id}
-                        user={u}                        isViewerAdmin={isViewerAdmin}                        onEdit={onEdit}
+                        user={u}                        isViewerAdmin={isViewerAdmin}                        imageBustToken={imageBustToken}                        onEdit={onEdit}
                         onDelete={onDelete}
                         onHardDelete={onHardDelete}
                     />

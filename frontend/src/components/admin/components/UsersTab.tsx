@@ -50,6 +50,7 @@ export default function UsersTab({
 
     const [editingId, setEditingId] = useState<number | null>(null)
     const [currentUser, setCurrentUser] = useState<User | null>(null)
+    const [imageBustToken, setImageBustToken] = useState<number>(() => Date.now())
 
     const isEditing = useMemo(() => editingId !== null, [editingId])
 
@@ -63,6 +64,8 @@ export default function UsersTab({
                 q: debouncedQuery || undefined,
             })
             setUsers(data)
+            // Force image reloads by updating a cache-busting token
+            setImageBustToken(Date.now())
         } catch (e) {
             setError(t('users.loadError'))
         } finally {
@@ -100,6 +103,8 @@ export default function UsersTab({
             setUsers(prev => prev.map(u => u.id === user.id ? user : u))
         }
         cancelEdit()
+        // Force a server refresh to ensure latest data and avatar reload
+        void refresh()
     }
 
     function onDeleted(id: number) {
@@ -141,6 +146,7 @@ export default function UsersTab({
                 onQueryChange={setQuery}
                 onStatusFilterChange={setStatusFilter}
                 onFirstLoginFilterChange={setFirstLoginFilter}
+                imageBustToken={imageBustToken}
             />
         </div>
     )
