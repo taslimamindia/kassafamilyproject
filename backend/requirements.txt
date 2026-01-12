@@ -1,6 +1,6 @@
 fastapi
 uvicorn[standard]
-mangum
+gunicorn
 mysql-connector-python
 python-dotenv
 python-multipart
