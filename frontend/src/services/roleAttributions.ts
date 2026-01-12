@@ -12,8 +12,10 @@ export type RoleAttribution = {
     role?: string
 }
 
-export async function listRoleAttributions(): Promise<RoleAttribution[]> {
-    return getJson<RoleAttribution[]>('/role-attributions')
+export async function listRoleAttributions(status: 'all' | 'active' | 'inactive' = 'active'): Promise<RoleAttribution[]> {
+    const params = new URLSearchParams()
+    params.set('status', status)
+    return getJson<RoleAttribution[]>(`/role-attributions?${params.toString()}`)
 }
 
 export async function getRolesForUser(userId: number): Promise<Role[]> {

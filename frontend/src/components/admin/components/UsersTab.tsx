@@ -42,6 +42,12 @@ export default function UsersTab({
     const [error, setError] = useState<string | null>(null)
     const { t } = useTranslation()
 
+    // Filters lifted to parent; default to active users only
+    const [query, setQuery] = useState('')
+    const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('active')
+    const [firstLoginFilter, setFirstLoginFilter] = useState<'all' | 'yes' | 'no'>('all')
+    const [debouncedQuery, setDebouncedQuery] = useState('')
+
     const [editingId, setEditingId] = useState<number | null>(null)
     const [currentUser, setCurrentUser] = useState<User | null>(null)
 
@@ -51,7 +57,11 @@ export default function UsersTab({
         setLoading(true)
         setError(null)
         try {
-            const data = await getUsers()
+            const data = await getUsers({
+                status: statusFilter,
+                firstLogin: firstLoginFilter,
+                q: debouncedQuery || undefined,
+            })
             setUsers(data)
         } catch (e) {
             setError(t('users.loadError'))
@@ -60,7 +70,13 @@ export default function UsersTab({
         }
     }
 
-    useEffect(() => { refresh() }, [])
+    // Debounce search input to reduce network calls
+    useEffect(() => {
+        const timer = setTimeout(() => setDebouncedQuery(query.trim()), 300)
+        return () => clearTimeout(timer)
+    }, [query])
+
+    useEffect(() => { refresh() }, [debouncedQuery, statusFilter, firstLoginFilter])
 
     function startCreate() {
         setEditingId(0)
@@ -87,8 +103,10 @@ export default function UsersTab({
     }
 
     function onDeleted(id: number) {
-        // Keep the user in the list, mark as inactive
-        setUsers(prev => prev.map(u => u.id === id ? { ...u, isactive: 0 } as User : u))
+        // touch param to satisfy linter
+        void id
+        // After deletion/deactivation, refresh server-filtered list
+        void refresh()
     }
 
     return (
@@ -114,7 +132,17 @@ export default function UsersTab({
                 )}
             </Modal>
 
-            <UsersTable users={users} onEdit={startEdit} onDeleted={onDeleted} />
+            <UsersTable
+                users={users}
+                onEdit={startEdit}
+                onDeleted={onDeleted}
+                query={query}
+                statusFilter={statusFilter}
+                firstLoginFilter={firstLoginFilter}
+                onQueryChange={setQuery}
+                onStatusFilterChange={setStatusFilter}
+                onFirstLoginFilterChange={setFirstLoginFilter}
+            />
         </div>
     )
 }

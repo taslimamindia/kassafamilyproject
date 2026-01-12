@@ -10,9 +10,9 @@ import i18n from '../../../i18n'
 
 // Localized dictionary for this component
 const rolesTabResources = {
-    fr: { roles: { loadError: 'Erreur lors du chargement des données', createRole: 'Créer un rôle', editRole: 'Modifier un rôle' }, common: { refresh: 'Actualiser' } },
-    en: { roles: { loadError: 'Error loading data', createRole: 'Create a role', editRole: 'Edit a role' }, common: { refresh: 'Refresh' } },
-    ar: { roles: { loadError: 'خطأ أثناء تحميل البيانات', createRole: 'إنشاء دور', editRole: 'تعديل دور' }, common: { refresh: 'تحديث' } },
+    fr: { roles: { loadError: 'Erreur lors du chargement des données', createRole: 'Créer un rôle', editRole: 'Modifier un rôle', filter: { status: 'Filtre statut', all: 'Tous', active: 'Actifs', inactive: 'Inactifs' } }, common: { refresh: 'Actualiser' } },
+    en: { roles: { loadError: 'Error loading data', createRole: 'Create a role', editRole: 'Edit a role', filter: { status: 'Status filter', all: 'All', active: 'Active', inactive: 'Inactive' } }, common: { refresh: 'Refresh' } },
+    ar: { roles: { loadError: 'خطأ أثناء تحميل البيانات', createRole: 'إنشاء دور', editRole: 'تعديل دور', filter: { status: 'تصفية الحالة', all: 'الكل', active: 'نشط', inactive: 'غير نشط' } }, common: { refresh: 'تحديث' } },
 }
 
 for (const [lng, res] of Object.entries(rolesTabResources)) {
@@ -25,6 +25,7 @@ export default function RolesTab() {
     const [attributions, setAttributions] = useState<RoleAttribution[]>([])
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState<string | null>(null)
+    const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('active')
 
     const [editingId, setEditingId] = useState<number | null>(null)
     const [currentRole, setCurrentRole] = useState<Role | null>(null)
@@ -37,7 +38,7 @@ export default function RolesTab() {
         try {
             const [rolesData, attributionsData] = await Promise.all([
                 getRoles(),
-                listRoleAttributions()
+                listRoleAttributions(statusFilter)
             ])
             setRoles(rolesData)
             setAttributions(attributionsData)
@@ -49,7 +50,7 @@ export default function RolesTab() {
         }
     }
 
-    useEffect(() => { refresh() }, [])
+    useEffect(() => { refresh() }, [statusFilter])
 
     function startCreate() {
         setEditingId(0)
@@ -93,6 +94,23 @@ export default function RolesTab() {
             </div>
 
             {error && <div className="alert alert-danger" role="alert">{error}</div>}
+
+            {/* Roles assignments status filter */}
+            <div className="d-flex flex-wrap align-items-center justify-content-between mb-3 gap-3">
+                <div className="btn-group shadow-sm" role="group" aria-label={t('roles.filter.status')}>
+                    <input type="radio" className="btn-check" name="rolesStatus" id="rolesStatusAll" autoComplete="off"
+                        checked={statusFilter === 'all'} onChange={() => setStatusFilter('all')} />
+                    <label className="btn btn-outline-secondary btn-sm" htmlFor="rolesStatusAll">{t('roles.filter.all')}</label>
+
+                    <input type="radio" className="btn-check" name="rolesStatus" id="rolesStatusActive" autoComplete="off"
+                        checked={statusFilter === 'active'} onChange={() => setStatusFilter('active')} />
+                    <label className="btn btn-outline-success btn-sm" htmlFor="rolesStatusActive">{t('roles.filter.active')}</label>
+
+                    <input type="radio" className="btn-check" name="rolesStatus" id="rolesStatusInactive" autoComplete="off"
+                        checked={statusFilter === 'inactive'} onChange={() => setStatusFilter('inactive')} />
+                    <label className="btn btn-outline-secondary btn-sm" htmlFor="rolesStatusInactive">{t('roles.filter.inactive')}</label>
+                </div>
+            </div>
 
             <Modal
                 isOpen={isEditing}

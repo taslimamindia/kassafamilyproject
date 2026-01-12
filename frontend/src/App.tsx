@@ -17,6 +17,7 @@ import Profile from './components/profil/Profile'
 import CreateAdmin from './components/pages/CreateAdmin'
 import './i18n'
 import { LanguageProvider } from './contexts/LanguageContext'
+import HomeUser from './components/user/HomeUser'
 
 function App() {
   return (
@@ -62,6 +63,14 @@ function App() {
                 <AdminGroupRoute>
                   <HomeAdminGroup />
                 </AdminGroupRoute>
+              }
+            />
+            <Route
+              path="/user"
+              element={
+                <ProtectedRoute>
+                  <HomeUser />
+                </ProtectedRoute>
               }
             />
             <Route path="*" element={<Navigate to="/errors" replace />} />

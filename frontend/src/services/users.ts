@@ -16,8 +16,17 @@ export type User = {
     isfirstlogin?: number
 }
 
-export async function getUsers(): Promise<User[]> {
-    return getJson<User[]>('/users')
+export async function getUsers(opts: {
+    status?: 'all' | 'active' | 'inactive'
+    firstLogin?: 'all' | 'yes' | 'no'
+    q?: string
+} = {}): Promise<User[]> {
+    const params = new URLSearchParams()
+    params.set('status', (opts.status ?? 'active'))
+    params.set('first_login', (opts.firstLogin ?? 'all'))
+    if (opts.q) params.set('q', opts.q)
+    const query = params.toString()
+    return getJson<User[]>(`/users${query ? `?${query}` : ''}`)
 }
 
 export async function getCurrentUser(): Promise<User> {

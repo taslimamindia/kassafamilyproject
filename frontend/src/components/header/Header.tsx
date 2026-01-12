@@ -21,6 +21,7 @@ const headerResources = {
             logout: 'Se déconnecter',
             profile: 'Profil',
             admin: 'Admin',
+            users: 'Utilisateurs',
         },
     },
     en: {
@@ -34,6 +35,7 @@ const headerResources = {
             logout: 'Sign out',
             profile: 'Profile',
             admin: 'Admin',
+            users: 'Users',
         },
     },
     ar: {
@@ -47,6 +49,7 @@ const headerResources = {
             logout: 'تسجيل الخروج',
             profile: 'الملف الشخصي',
             admin: 'المشرف',
+            users: 'المستخدمون',
         },
     },
 }
@@ -125,12 +128,16 @@ function Header() {
                 </button>
                 <div className="collapse navbar-collapse" id="mainNavbar">
                     <ul className="navbar-nav ms-lg-auto mb-2 mb-lg-0 gap-lg-2 align-items-lg-center">
-                        {/* <li className="nav-item">
-                            <NavLink to="/" end className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-                                Accueil
-                            </NavLink>
-                        </li> */}
-                        {/* Order: Admin (left), then Profile/Login (far right) */}
+                        
+                        {isAuth && (
+                            <li className="nav-item">
+                                <NavLink to="/user" className={({ isActive }) => `nav-link d-flex align-items-center gap-2 ${isActive ? 'active' : ''}`}>
+                                    <i className="bi bi-house-heart" aria-hidden="true"></i>
+                                    {t('nav.users')}
+                                </NavLink>
+                            </li>
+                        )}
+
                         {isAuth && isAdmin && (
                             <li className="nav-item">
                                 <NavLink to="/admin" className={({ isActive }) => `nav-link d-flex align-items-center gap-2 ${isActive ? 'active' : ''}`}>

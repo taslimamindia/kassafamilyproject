@@ -1,14 +1,17 @@
 import { useMemo, useState, useEffect } from 'react'
-import { updateUserById, getCurrentUser, type User } from '../../../services/users'
+import { updateUserById, getCurrentUser, getUserById, type User } from '../../../services/users'
 import { getRolesForUser } from '../../../services/roleAttributions'
 import FilterBar from '../../common/FilterBar'
-import { filterRows } from '../../common/tableFilter'
 import { useTranslation } from 'react-i18next'
 import i18n from '../../../i18n'
 
 // Localized dictionary for this component (decentralized)
 const usersTableResources = {
     fr: {
+        common: {
+            id: 'ID',
+            email: 'Email',
+        },
         users: {
             searchPlaceholder: 'Rechercher un utilisateur…',
             filter: {
@@ -32,10 +35,19 @@ const usersTableResources = {
                 notFirst: 'Non',
                 edit: 'Modifier',
                 deactivate: 'Désactiver',
+                showParents: 'Voir les parents',
+                hideParents: 'Masquer les parents',
+                parentsTitle: 'Parents',
+                noParents: 'Aucun parent',
+                loading: 'Chargement…',
             },
         },
     },
     en: {
+        common: {
+            id: 'ID',
+            email: 'Email',
+        },
         users: {
             searchPlaceholder: 'Search a user…',
             filter: {
@@ -59,10 +71,19 @@ const usersTableResources = {
                 notFirst: 'No',
                 edit: 'Edit',
                 deactivate: 'Deactivate',
+                showParents: 'Show parents',
+                hideParents: 'Hide parents',
+                parentsTitle: 'Parents',
+                noParents: 'No parents',
+                loading: 'Loading…',
             },
         },
     },
     ar: {
+        common: {
+            id: 'المعرف',
+            email: 'البريد الإلكتروني',
+        },
         users: {
             searchPlaceholder: 'ابحث عن مستخدم…',
             filter: {
@@ -86,6 +107,11 @@ const usersTableResources = {
                 notFirst: 'لا',
                 edit: 'تعديل',
                 deactivate: 'تعطيل',
+                showParents: 'عرض الوالدين',
+                hideParents: 'إخفاء الوالدين',
+                parentsTitle: 'الوالدان',
+                noParents: 'لا يوجد والدان',
+                loading: 'جارٍ التحميل…',
             },
         },
     },
@@ -95,28 +121,59 @@ for (const [lng, res] of Object.entries(usersTableResources)) {
     i18n.addResourceBundle(lng, 'translation', res as any, true, false)
 }
 
+function getInitials(firstname?: string, lastname?: string): string {
+    const parts = `${firstname ?? ''} ${lastname ?? ''}`.trim().split(/\s+/).filter(Boolean)
+    const initials = parts.map(p => p.charAt(0).toUpperCase()).join('')
+    return initials.slice(0, 3) || '?'
+}
+
 function UserCard({ user, isViewerAdmin, onEdit, onDelete }: { user: User, isViewerAdmin: boolean, onEdit: (u: User) => void, onDelete: (id: number) => void }) {
     const { t } = useTranslation()
     const rawActive = (user as any).isactive
     const rawFirst = (user as any).isfirstlogin
     const isActive = typeof rawActive !== 'undefined' ? (Number(rawActive) === 1 || rawActive === true) : true
     const isFirstLogin = typeof rawFirst !== 'undefined' ? (Number(rawFirst) === 1 || rawFirst === true) : false
+    const [showParents, setShowParents] = useState(false)
+    const [parentsLoading, setParentsLoading] = useState(false)
+    const [parents, setParents] = useState<{ father: User | null, mother: User | null } | null>(null)
+
+    async function toggleParents() {
+        const next = !showParents
+        setShowParents(next)
+        if (next && !parents) {
+            setParentsLoading(true)
+            try {
+                const fetchFather = typeof user.id_father !== 'undefined' && user.id_father !== null
+                    ? getUserById(user.id_father).catch(() => null)
+                    : Promise.resolve(null)
+                const fetchMother = typeof user.id_mother !== 'undefined' && user.id_mother !== null
+                    ? getUserById(user.id_mother).catch(() => null)
+                    : Promise.resolve(null)
+                const [father, mother] = await Promise.all([fetchFather, fetchMother])
+                setParents({ father, mother })
+            } finally {
+                setParentsLoading(false)
+            }
+        }
+    }
 
     return (
-        <div className="col-12 col-md-6 col-lg-3">
-            <div className={`card h-100 shadow-sm ${isActive ? '' : 'border-secondary bg-light text-muted'}`}>
+        <div className="col-12 col-sm-6 col-lg-4">
+            <div className={`card h-100 shadow-sm border-0 rounded-4 ${isActive ? '' : 'bg-light text-muted'}`}>
                 <div className="card-header border-0 bg-transparent text-center pt-3 pb-0">
-                    <div className="mx-auto bg-light rounded-circle d-flex align-items-center justify-content-center overflow-hidden"
-                        style={{ width: '100px', height: '100px' }}>
+                    <div className="mx-auto rounded-circle d-flex align-items-center justify-content-center overflow-hidden"
+                        style={{ width: '110px', height: '110px', background: 'radial-gradient( circle at 30% 30%, #ffe0f0, #e6f7ff )' }}>
                         {user.image_url ? (
                             <img src={user.image_url} alt={`${user.firstname} ${user.lastname}`} className="w-100 h-100" style={{ objectFit: 'cover' }} />
                         ) : (
-                            <i className="bi bi-person text-secondary" style={{ fontSize: '3rem' }}></i>
+                            <span className="fw-bold" style={{ fontSize: '2rem', letterSpacing: '0.08rem' }}>
+                                {getInitials(user.firstname, user.lastname)}
+                            </span>
                         )}
                     </div>
                 </div>
                 <div className="card-body text-center">
-                    <h5 className="card-title text-truncate mb-1" title={`${user.firstname} ${user.lastname}`}>
+                    <h5 className="card-title text-truncate mb-1 fw-semibold" title={`${user.firstname} ${user.lastname}`}>
                         {user.firstname} {user.lastname}
                     </h5>
                     <p className="card-subtitle mb-3 text-muted small">@{user.username}</p>
@@ -152,7 +209,7 @@ function UserCard({ user, isViewerAdmin, onEdit, onDelete }: { user: User, isVie
                     </div>
                 </div>
                 <div className="card-footer bg-transparent border-0 pb-3 pt-0 d-flex flex-column gap-2 px-3">
-                    <button className="btn btn-sm btn-outline-primary w-100" onClick={() => onEdit(user)}>
+                    <button className="btn btn-sm btn-primary w-100" onClick={() => onEdit(user)}>
                         <i className="bi bi-pencil me-1"></i>{t('users.card.edit')}
                     </button>
                     {isActive && (
@@ -160,22 +217,68 @@ function UserCard({ user, isViewerAdmin, onEdit, onDelete }: { user: User, isVie
                             <i className="bi bi-trash me-1"></i>{t('users.card.deactivate')}
                         </button>
                     )}
+                    <button className="btn btn-sm btn-outline-secondary w-100" onClick={toggleParents}>
+                        <i className={`bi ${showParents ? 'bi-eye-slash' : 'bi-people'} me-1`}></i>
+                        {showParents ? t('users.card.hideParents') : t('users.card.showParents')}
+                    </button>
+                    {showParents && (
+                        <div className="bg-light rounded-3 p-2 mt-1 text-start small">
+                            <div className="fw-semibold mb-2"><i className="bi bi-people me-1"></i>{t('users.card.parentsTitle')}</div>
+                            {parentsLoading && (
+                                <div className="text-muted">{t('users.card.loading')}</div>
+                            )}
+                            {!parentsLoading && parents && (!parents.father && !parents.mother) && (
+                                <div className="text-muted">{t('users.card.noParents')}</div>
+                            )}
+                            {!parentsLoading && parents && (
+                                <div className="d-flex flex-column gap-1">
+                                    {parents.father && (
+                                        <div>
+                                            <span className="me-1">👨</span>
+                                            <span className="fw-medium">{parents.father.firstname} {parents.father.lastname}</span>
+                                            <span className="text-muted ms-1">@{parents.father.username}</span>
+                                        </div>
+                                    )}
+                                    {parents.mother && (
+                                        <div>
+                                            <span className="me-1">👩</span>
+                                            <span className="fw-medium">{parents.mother.firstname} {parents.mother.lastname}</span>
+                                            <span className="text-muted ms-1">@{parents.mother.username}</span>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    )}
                 </div>
             </div>
         </div>
     )
 }
 
-export default function UsersTable({ users, onEdit, onDeleted }: {
+export default function UsersTable({
+    users,
+    onEdit,
+    onDeleted,
+    query,
+    statusFilter,
+    firstLoginFilter,
+    onQueryChange,
+    onStatusFilterChange,
+    onFirstLoginFilterChange,
+}: {
     users: User[]
     onEdit: (user: User) => void
     onDeleted: (id: number) => void
+    query: string
+    statusFilter: 'all' | 'active' | 'inactive'
+    firstLoginFilter: 'all' | 'yes' | 'no'
+    onQueryChange: (q: string) => void
+    onStatusFilterChange: (s: 'all' | 'active' | 'inactive') => void
+    onFirstLoginFilterChange: (f: 'all' | 'yes' | 'no') => void
 }) {
     const { t } = useTranslation()
     const [error, setError] = useState<string | null>(null)
-    const [query, setQuery] = useState('')
-    const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('active')
-    const [firstLoginFilter, setFirstLoginFilter] = useState<'all' | 'yes' | 'no'>('all')
     const [isViewerAdmin, setIsViewerAdmin] = useState(false)
 
     useEffect(() => {
@@ -203,24 +306,12 @@ export default function UsersTable({ users, onEdit, onDeleted }: {
         }
     }
 
-    const visibleUsers = useMemo(() => filterRows(users, query, [
-        u => u.id,
-        u => u.firstname,
-        u => u.lastname,
-        u => u.username,
-        u => u.email,
-        u => u.telephone,
-        u => u.birthday,
-        u => (typeof (u as any).isactive !== 'undefined' ? (Number((u as any).isactive) === 1 ? t('users.card.active') : t('users.card.inactive')) : ''),
-        u => (typeof (u as any).isfirstlogin !== 'undefined' ? (Number((u as any).isfirstlogin) === 1 ? t('users.card.first') : t('users.card.notFirst')) : ''),
-    ]), [users, query])
-
     const sortedUsers = useMemo(() => {
         const getIsActive = (u: any) => {
             const rawActive = u?.isactive
             return typeof rawActive !== 'undefined' ? (Number(rawActive) === 1 || rawActive === true) : true
         }
-        return [...visibleUsers].sort((a, b) => {
+        return [...users].sort((a, b) => {
             const aActive = getIsActive(a)
             const bActive = getIsActive(b)
             if (aActive !== bActive) return aActive ? -1 : 1
@@ -233,73 +324,63 @@ export default function UsersTable({ users, onEdit, onDeleted }: {
             if (aFirst !== bFirst) return aFirst.localeCompare(bFirst)
             return a.id - b.id
         })
-    }, [visibleUsers])
-
-    const filteredUsers = useMemo(() => {
-        return sortedUsers.filter(u => {
-            const rawActive = (u as any).isactive
-            const isActive = typeof rawActive !== 'undefined' ? (Number(rawActive) === 1 || rawActive === true) : true
-            const rawFirst = (u as any).isfirstlogin
-            const isFirstLogin = typeof rawFirst !== 'undefined' ? (Number(rawFirst) === 1 || rawFirst === true) : false
-
-            if (statusFilter === 'active' && !isActive) return false
-            if (statusFilter === 'inactive' && isActive) return false
-
-            if (firstLoginFilter === 'yes' && !isFirstLogin) return false
-            if (firstLoginFilter === 'no' && isFirstLogin) return false
-
-            return true
-        })
-    }, [sortedUsers, statusFilter, firstLoginFilter])
+    }, [users])
 
     return (
         <div>
             {error && <div className="alert alert-danger" role="alert">{error}</div>}
 
-            <div className="d-flex flex-wrap align-items-center justify-content-between mb-3 gap-3">
-                <div className="flex-grow-1">
-                    <FilterBar value={query} onChange={setQuery} placeholder={t('users.searchPlaceholder')} />
-                </div>
-                <div className="d-flex flex-wrap gap-3">
-                    <div className="btn-group shadow-sm" role="group" aria-label={t('users.filter.status')}>
-                        <input type="radio" className="btn-check" name="status" id="statusAll" autoComplete="off"
-                            checked={statusFilter === 'all'} onChange={() => setStatusFilter('all')} />
-                        <label className="btn btn-outline-secondary btn-sm" htmlFor="statusAll">{t('users.filter.all')}</label>
-
-                        <input type="radio" className="btn-check" name="status" id="statusActive" autoComplete="off"
-                            checked={statusFilter === 'active'} onChange={() => setStatusFilter('active')} />
-                        <label className="btn btn-outline-success btn-sm" htmlFor="statusActive">{t('users.filter.active')}</label>
-
-                        <input type="radio" className="btn-check" name="status" id="statusInactive" autoComplete="off"
-                            checked={statusFilter === 'inactive'} onChange={() => setStatusFilter('inactive')} />
-                        <label className="btn btn-outline-secondary btn-sm" htmlFor="statusInactive">{t('users.filter.inactive')}</label>
+            <div className="container-fluid p-0 mb-3">
+                <div className="row g-3 align-items-center">
+                    <div className="col-12 col-md-4 d-none d-md-block"></div>
+                    <div className="col-12 col-md-4 d-flex justify-content-center">
+                        <div className="flex-grow-1" style={{ maxWidth: '520px' }}>
+                            <FilterBar value={query} onChange={onQueryChange} placeholder={t('users.searchPlaceholder')} />
+                        </div>
                     </div>
+                    <div className="col-12 col-md-4 d-flex justify-content-md-end justify-content-center">
+                        <div className="btn-toolbar gap-2" role="toolbar" aria-label="filters">
+                            <div className="btn-group shadow-sm" role="group" aria-label={t('users.filter.status')}>
+                                <input type="radio" className="btn-check" name="status" id="statusAll" autoComplete="off"
+                                    checked={statusFilter === 'all'} onChange={() => onStatusFilterChange('all')} />
+                                <label className="btn btn-outline-secondary btn-sm" htmlFor="statusAll">{t('users.filter.all')}</label>
 
-                    <div className="btn-group shadow-sm" role="group" aria-label={t('users.filter.firstLogin')}>
-                        <input type="radio" className="btn-check" name="firstLogin" id="flAll" autoComplete="off"
-                            checked={firstLoginFilter === 'all'} onChange={() => setFirstLoginFilter('all')} />
-                        <label className="btn btn-outline-secondary btn-sm" htmlFor="flAll">{t('users.filter.flAll')}</label>
+                                <input type="radio" className="btn-check" name="status" id="statusActive" autoComplete="off"
+                                    checked={statusFilter === 'active'} onChange={() => onStatusFilterChange('active')} />
+                                <label className="btn btn-outline-success btn-sm" htmlFor="statusActive">{t('users.filter.active')}</label>
 
-                        <input type="radio" className="btn-check" name="firstLogin" id="flYes" autoComplete="off"
-                            checked={firstLoginFilter === 'yes'} onChange={() => setFirstLoginFilter('yes')} />
-                        <label className="btn btn-outline-warning btn-sm text-dark" htmlFor="flYes">{t('users.filter.flYes')}</label>
+                                <input type="radio" className="btn-check" name="status" id="statusInactive" autoComplete="off"
+                                    checked={statusFilter === 'inactive'} onChange={() => onStatusFilterChange('inactive')} />
+                                <label className="btn btn-outline-secondary btn-sm" htmlFor="statusInactive">{t('users.filter.inactive')}</label>
+                            </div>
 
-                        <input type="radio" className="btn-check" name="firstLogin" id="flNo" autoComplete="off"
-                            checked={firstLoginFilter === 'no'} onChange={() => setFirstLoginFilter('no')} />
-                        <label className="btn btn-outline-info btn-sm text-dark" htmlFor="flNo">{t('users.filter.flNo')}</label>
+                            <div className="btn-group shadow-sm" role="group" aria-label={t('users.filter.firstLogin')}>
+                                <input type="radio" className="btn-check" name="firstLogin" id="flAll" autoComplete="off"
+                                    checked={firstLoginFilter === 'all'} onChange={() => onFirstLoginFilterChange('all')} />
+                                <label className="btn btn-outline-secondary btn-sm" htmlFor="flAll">{t('users.filter.flAll')}</label>
+
+                                <input type="radio" className="btn-check" name="firstLogin" id="flYes" autoComplete="off"
+                                    checked={firstLoginFilter === 'yes'} onChange={() => onFirstLoginFilterChange('yes')} />
+                                <label className="btn btn-outline-warning btn-sm text-dark" htmlFor="flYes">{t('users.filter.flYes')}</label>
+
+                                <input type="radio" className="btn-check" name="firstLogin" id="flNo" autoComplete="off"
+                                    checked={firstLoginFilter === 'no'} onChange={() => onFirstLoginFilterChange('no')} />
+                                <label className="btn btn-outline-info btn-sm text-dark" htmlFor="flNo">{t('users.filter.flNo')}</label>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
 
             <div className="row g-3">
-                {filteredUsers.map(u => (
+                {sortedUsers.map(u => (
                     <UserCard
                         key={u.id}
                         user={u}                        isViewerAdmin={isViewerAdmin}                        onEdit={onEdit}
                         onDelete={onDelete}
                     />
                 ))}
-                {filteredUsers.length === 0 && (
+                {sortedUsers.length === 0 && (
                     <div className="col-12 text-center py-5 text-muted">
                         {t('users.noneFound')}
                     </div>

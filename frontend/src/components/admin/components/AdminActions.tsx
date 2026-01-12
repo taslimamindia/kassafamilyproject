@@ -1,5 +1,6 @@
 import { useTranslation } from 'react-i18next'
 import i18n from '../../../i18n'
+import './AdminActions.css'
 
 // Localized dictionary for this component
 const adminActionsResources = {
@@ -24,9 +25,9 @@ export default function AdminActions({ onCreate, onRefresh, loading }: {
                 <i className="bi bi-plus-lg me-1" aria-hidden="true"></i>
                 {t('admin.addUser')}
             </button>
-            <button className="btn btn-outline-secondary" onClick={onRefresh} disabled={loading}>
-                <i className="bi bi-arrow-clockwise me-1" aria-hidden="true"></i>
-                {t('common.refresh')}
+            <button className="btn btn-outline-secondary btn-icon" onClick={onRefresh} disabled={loading} title={t('common.refresh')} aria-label={t('common.refresh')}>
+                <i className="bi bi-arrow-clockwise" aria-hidden="true"></i>
+                <span className="visually-hidden">{t('common.refresh')}</span>
             </button>
         </div>
     )

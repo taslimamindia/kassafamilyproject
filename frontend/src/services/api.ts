@@ -13,7 +13,9 @@ export async function apiFetch(path: string, init: RequestInit = {}): Promise<Re
     const headers = new Headers(init.headers || {})
     if (token) headers.set('Authorization', `Bearer ${token}`)
     const res = await fetch(`${API_BASE_URL}${path}`, { ...init, headers })
-    if (res.status === 401 || res.status === 403) {
+    // Avoid auto-redirect handling for auth endpoints (login / first-login change)
+    const isAuthPath = path.startsWith('/auth')
+    if ((res.status === 401 || res.status === 403) && !isAuthPath) {
         try {
             localStorage.removeItem('access_token')
             try { window.dispatchEvent(new Event('auth-changed')) } catch {}
@@ -44,6 +46,17 @@ export async function postJson<T, B = unknown>(path: string, body?: B, init: Req
         headers,
         body: body ? JSON.stringify(body) : undefined,
     })
-    if (!res.ok) throw new Error(`POST ${path} failed: ${res.status}`)
+    if (!res.ok) {
+        let payload: any = null
+        try {
+            payload = await res.json()
+        } catch {
+            try { payload = await res.text() } catch {}
+        }
+        const err: any = new Error(`POST ${path} failed: ${res.status}`)
+        err.status = res.status
+        err.body = payload
+        throw err
+    }
     return (await res.json()) as T
 }
