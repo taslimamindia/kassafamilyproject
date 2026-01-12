@@ -18,7 +18,9 @@ def check_db(current_user: dict = Depends(get_current_user)):
     try:
         cursor.execute("SELECT DATABASE();")
         db_name = cursor.fetchone()[0]
-        db_type = "online" if settings.env == "prod" else "local"
+        # On Lightsail or Local, we now treat connection as 'local' (host-wise)
+        # but we can distinguish based on env name
+        db_type = "production" if settings.env == "production" else "development"
         return {
             "env": settings.env,
             "db": db_name,

@@ -15,21 +15,18 @@ class Settings:
 
         # Environment (required)
         self.env = os.environ["BACKEND_ENV"]
+        # Normalize env for easier checks
+        self.is_production = (self.env == "production")
+        self.is_development = (self.env == "development")
 
         # Database (AWS / Local)
-        self.online_db_host = os.getenv("BACKEND_ONLINE_DB_HOST")
-        self.online_db_user = os.getenv("BACKEND_ONLINE_DB_USER")
-        self.online_db_pass = os.getenv("BACKEND_ONLINE_DB_PASS")
-        self.online_db_name = os.getenv("BACKEND_ONLINE_DB_NAME")
-        
-        online_port = os.getenv("BACKEND_ONLINE_DB_PORT")
-        self.online_db_port = int(online_port) if online_port else 3306
-
-        self.local_db_host = os.getenv("BACKEND_LOCAL_DB_HOST")
-        self.local_db_user = os.getenv("BACKEND_LOCAL_DB_USER")
-        self.local_db_pass = os.getenv("BACKEND_LOCAL_DB_PASS")
-        self.local_db_name = os.getenv("BACKEND_LOCAL_DB_NAME")
-        self.local_db_port = int(os.getenv("BACKEND_LOCAL_DB_PORT", "3306"))
+        # We treat both local dev and production (Lightsail) as "local" DB connections
+        # (e.g. connecting to 127.0.0.1 on the respective machine)
+        self.db_host = os.getenv("BACKEND_LOCAL_DB_HOST")
+        self.db_user = os.getenv("BACKEND_LOCAL_DB_USER")
+        self.db_pass = os.getenv("BACKEND_LOCAL_DB_PASS")
+        self.db_name = os.getenv("BACKEND_LOCAL_DB_NAME")
+        self.db_port = int(os.getenv("BACKEND_LOCAL_DB_PORT", "3306"))
 
         # Optional: route DB via SSH tunnel (e.g., Lightsail with PEM)
         self.db_via_ssh = str(os.getenv("BACKEND_DB_VIA_SSH", "false")).strip().lower() in {"1", "true", "yes"}
@@ -111,24 +108,14 @@ class Settings:
                 # Else leave as None; code paths will handle missing key configuration
 
     def get_db_config(self):
-        if self.env == "prod":
-            return {
-                "host": self.online_db_host,
-                "user": self.online_db_user,
-                "password": self.online_db_pass,
-                "database": self.online_db_name,
-                "port": self.online_db_port,
-                "connect_timeout": 5,
-            }
-        else:
-            return {
-                "host": self.local_db_host,
-                "user": self.local_db_user,
-                "password": self.local_db_pass,
-                "database": self.local_db_name,
-                "port": self.local_db_port,
-                "connect_timeout": 5,
-            }
+        return {
+            "host": self.db_host,
+            "user": self.db_user,
+            "password": self.db_pass,
+            "database": self.db_name,
+            "port": self.db_port,
+            "connect_timeout": 5,
+        }
 
     def _resolve_path(self, path_str: str) -> str:
         """Resolve a potentially relative path to an absolute path.
