@@ -58,20 +58,33 @@ jobs:
           BACKEND_AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           
           script: |
-            # On entre dans le dossier spécifique du code
-            cd /home/ubuntu/kassa/api_famille_kassatech_org
-            
-            # Mise à jour du code source
-            git pull origin main
+            # 1. Aller dans le dossier parent
+            cd /home/ubuntu/kassa
 
-            # Création du fichier .env au même endroit que settings.py
+            # 2. Vérifier si le dossier api_famille_kassatech_org est un dépôt Git
+            if [ ! -d "api_famille_kassatech_org/.git" ]; then
+              echo "Le dossier n'est pas un dépôt Git. Initialisation..."
+              # On clone temporairement ou on initialise
+              # Remplacez l'URL par votre URL de dépôt (HTTPS ou SSH configuré sur l'instance)
+              git clone https://github.com/VOTRE_NOM/VOTRE_REPO.git temp_repo
+              cp -r temp_repo/* api_famille_kassatech_org/
+              cp -r temp_repo/.git api_famille_kassatech_org/
+              rm -rf temp_repo
+            fi
+
+            # 3. Entrer dans le dossier et forcer la mise à jour
+            cd api_famille_kassatech_org
+            git fetch origin main
+            git reset --hard origin/main  # Force l'alignement avec GitHub
+
+            # 4. Création du fichier .env
             cat <<EOF > .env
             BACKEND_ENV=$BACKEND_ENV
-            BACKEND_ONLINE_DB_HOST=$BACKEND_ONLINE_DB_HOST
-            BACKEND_ONLINE_DB_USER=$BACKEND_ONLINE_DB_USER
-            BACKEND_ONLINE_DB_PASS=$BACKEND_ONLINE_DB_PASS
-            BACKEND_ONLINE_DB_NAME=$BACKEND_ONLINE_DB_NAME
-            BACKEND_ONLINE_DB_PORT=$BACKEND_ONLINE_DB_PORT
+            BACKEND_LOCAL_DB_HOST=$BACKEND_LOCAL_DB_HOST
+            BACKEND_LOCAL_DB_USER=$BACKEND_LOCAL_DB_USER
+            BACKEND_LOCAL_DB_PASS=$BACKEND_LOCAL_DB_PASS
+            BACKEND_LOCAL_DB_NAME=$BACKEND_LOCAL_DB_NAME
+            BACKEND_LOCAL_DB_PORT=$BACKEND_LOCAL_DB_PORT
             BACKEND_JWT_SECRET=$BACKEND_JWT_SECRET
             BACKEND_JWT_ALGORITHM=$BACKEND_JWT_ALGORITHM
             BACKEND_JWT_EXP_MINUTES=$BACKEND_JWT_EXP_MINUTES
@@ -83,10 +96,12 @@ jobs:
             BACKEND_AWS_SECRET_ACCESS_KEY=$BACKEND_AWS_SECRET_ACCESS_KEY
             EOF
 
-            # Installation des dépendances (requirements.txt est dans /home/ubuntu/kassa)
+            # 5. Dépendances et Redémarrage
             cd /home/ubuntu/kassa
             source venv/bin/activate
             pip install -r requirements.txt
-
-            # Redémarrage du service systemd
             sudo systemctl restart fastapi_famille_kassa.service
+            
+            # 6. Vérification finale pour le log GitHub
+            echo "Contenu du dossier après déploiement :"
+            ls -la api_famille_kassatech_org/
