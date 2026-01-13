@@ -188,7 +188,7 @@ async def create_user(request: Request, cursor = Depends(get_cursor), current_us
 
     fields = [
         "id", "firstname", "lastname", "username", "password", "email", 
-        "telephone", "birthday", "image_url", "id_father", "id_mother",
+        "telephone", "birthday", "image_url", "gender", "id_father", "id_mother",
         "isactive", "isfirstlogin", "createdby","updatedby", "createdat", "updatedat"
     ]
     
@@ -204,6 +204,7 @@ async def create_user(request: Request, cursor = Depends(get_cursor), current_us
         clean_tel,
         body.birthday,
         body.image_url,
+        body.gender,
         body.id_father,
         body.id_mother,
         body.isactive if body.isactive is not None else 0,
@@ -257,6 +258,7 @@ async def update_user_by_id(user_id: int, request: Request, cursor = Depends(get
     if body.telephone is not None: fields.append("telephone = %s"); values.append(body.telephone)
     if body.birthday is not None: fields.append("birthday = %s"); values.append(body.birthday)
     if body.image_url is not None: fields.append("image_url = %s"); values.append(body.image_url)
+    if body.gender is not None: fields.append("gender = %s"); values.append(body.gender)
     
     # Parent logic validation same as original...
     cursor.execute("SELECT id_father, id_mother, username FROM users WHERE id = %s", (user_id,))
@@ -367,7 +369,7 @@ def delete_user_by_id(user_id: int, hard: bool = False, cursor = Depends(get_cur
         # For now, let SQL errors handle constraints or cascade if configured. 
         # Assuming simple DELETE for now.
         try:
-             # First remove role attributions to avoid constraint errors if not cascaded
+            # First remove role attributions to avoid constraint errors if not cascaded
             cursor.execute("DELETE FROM role_attribution WHERE users_id = %s", (user_id,))
             cursor.execute("DELETE FROM users WHERE id = %s", (user_id,))
             getattr(cursor, "_connection").commit()
@@ -405,6 +407,7 @@ def update_current_user_profile(body: UserUpdate, cursor = Depends(get_cursor), 
     if body.telephone is not None: fields.append("telephone = %s"); values.append(body.telephone)
     if body.birthday is not None: fields.append("birthday = %s"); values.append(body.birthday)
     if body.image_url is not None: fields.append("image_url = %s"); values.append(body.image_url)
+    if body.gender is not None: fields.append("gender = %s"); values.append(body.gender)
 
     if not fields:
         u = dict(current_user)
