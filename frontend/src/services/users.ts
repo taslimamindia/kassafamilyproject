@@ -8,7 +8,7 @@ export type User = {
     email?: string
     telephone?: string
     birthday?: string
-    image_url?: string
+    image_url?: string | null
     gender?: 'male' | 'female' | null
     id_father?: number | null
     id_mother?: number | null
@@ -55,7 +55,7 @@ export async function createUser(user: {
     email?: string
     telephone?: string
     birthday?: string
-    image_url?: string
+    image_url?: string | null
     gender?: 'male' | 'female' | null
     id_father?: number | null
     id_mother?: number | null
@@ -74,6 +74,7 @@ export async function createUser(user: {
 export async function updateUserById(id: number, partial: Partial<User> & {
     isactive?: number
     isfirstlogin?: number
+    remove_image?: boolean
 }): Promise<User> {
     const res = await apiFetch(`/users/${id}`, {
         method: 'PATCH',
@@ -125,10 +126,11 @@ export async function createUserWithImage(fields: {
     return (await res.json()) as User
 }
 
-export async function updateUserByIdWithImage(id: number, fields: Partial<User> & {
+export async function updateUserByIdWithImage(id: number, fields: (Partial<User> & {
     isactive?: number
     isfirstlogin?: number
-}, file: File): Promise<User> {
+    remove_image?: boolean
+}), file: File): Promise<User> {
     const form = new FormData()
     if (fields.firstname) form.append('firstname', fields.firstname)
     if (fields.lastname) form.append('lastname', fields.lastname)

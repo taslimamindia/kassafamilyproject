@@ -8,7 +8,7 @@ export type RoleAttribution = {
     username?: string
     firstname?: string
     lastname?: string
-    image_url?: string
+    image_url?: string | null
     role?: string
 }
 
