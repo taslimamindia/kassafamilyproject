@@ -20,6 +20,7 @@ const userFormResources = {
                 telephone: { title: "Téléphone", desc: "Numéro de téléphone au format international (ex: +224...). Optionnel." },
                 birthday: { title: "Date de naissance", desc: "Sélectionnez la date de naissance (AAAA-MM-JJ). Optionnel." },
                 image: { title: "Image (optionnel)", desc: "Ajoutez une photo de profil (JPEG/PNG). Optionnel." },
+                gender: { title: "Genre", desc: "Sélectionnez le genre de l'utilisateur: Homme ou Femme." },
                 isactive: { title: "Utilisateur actif", desc: "Activez pour autoriser la connexion de l'utilisateur. Désactivez pour bloquer l'accès." },
                 isfirstlogin: { title: "Première connexion", desc: "Activez si l'utilisateur doit changer son mot de passe lors de sa première connexion." },
                 father: { title: "Père", desc: "Sélectionnez le parent (père) s'il est déjà enregistré. Optionnel." },
@@ -31,7 +32,7 @@ const userFormResources = {
             labels: {
                 profilePhoto: "Photo de profil", changePhoto: "Changer la photo", activeAccount: "Compte Actif", firstLogin: "Première Connexion",
                 firstname: "Prénom", lastname: "Nom", birthday: "Date de naissance", email: "Email", phone: "Téléphone",
-                username: "Nom d'utilisateur", father: "Père", mother: "Mère"
+                username: "Nom d'utilisateur", father: "Père", mother: "Mère", gender: "Genre"
             },
             descriptions: {
                 activeAccount: "Autoriser ce compte à se connecter.", firstLogin: "Forcer le changement de MDP.",
@@ -62,6 +63,7 @@ const userFormResources = {
                 telephone: { title: "Phone", desc: "Phone number in international format (e.g., +224...). Optional." },
                 birthday: { title: "Date of Birth", desc: "Select date of birth (YYYY-MM-DD). Optional." },
                 image: { title: "Image (optional)", desc: "Add a profile photo (JPEG/PNG). Optional." },
+                gender: { title: "Gender", desc: "Select the user's gender: Male or Female." },
                 isactive: { title: "Active User", desc: "Enable to allow user login. Disable to block access." },
                 isfirstlogin: { title: "First Login", desc: "Enable if the user must change their password on first login." },
                 father: { title: "Father", desc: "Select the parent (father) if already registered. Optional." },
@@ -73,7 +75,7 @@ const userFormResources = {
             labels: {
                 profilePhoto: "Profile Photo", changePhoto: "Change Photo", activeAccount: "Active Account", firstLogin: "First Login",
                 firstname: "First Name", lastname: "Last Name", birthday: "Date of Birth", email: "Email", phone: "Phone",
-                username: "Username", father: "Father", mother: "Mother"
+                username: "Username", father: "Father", mother: "Mother", gender: "Gender"
             },
             descriptions: {
                 activeAccount: "Allow this account to log in.", firstLogin: "Force password change.",
@@ -104,6 +106,7 @@ const userFormResources = {
                 telephone: { title: "الهاتف", desc: "رقم الهاتف بالتنسيق الدولي (مثل: +224...). اختياري." },
                 birthday: { title: "تاريخ الميلاد", desc: "اختر تاريخ الميلاد (YYYY-MM-DD). اختياري." },
                 image: { title: "صورة (اختياري)", desc: "أضف صورة للملف الشخصي (JPEG/PNG). اختياري." },
+                gender: { title: "النوع", desc: "حدد نوع المستخدم: ذكر أو أنثى." },
                 isactive: { title: "مستخدم نشط", desc: "قم بالتفعيل للسماح بتسجيل دخول المستخدم. قم بالتعطيل لمنع الوصول." },
                 isfirstlogin: { title: "أول تسجيل دخول", desc: "قم بالتفعيل إذا كان يجب على المستخدم تغيير كلمة المرور عند أول تسجيل دخول." },
                 father: { title: "الأب", desc: "اختر الوالد (الأب) إذا كان مسجلاً بالفعل. اختياري." },
@@ -115,7 +118,7 @@ const userFormResources = {
             labels: {
                 profilePhoto: "صورة الملف الشخصي", changePhoto: "تغيير الصورة", activeAccount: "حساب نشط", firstLogin: "أول تسجيل دخول",
                 firstname: "الاسم الأول", lastname: "الاسم الأخير", birthday: "تاريخ الميلاد", email: "البريد الإلكتروني", phone: "الهاتف",
-                username: "اسم المستخدم", father: "الأب", mother: "الأم"
+                username: "اسم المستخدم", father: "الأب", mother: "الأم", gender: "النوع"
             },
             descriptions: {
                 activeAccount: "السماح لهذا الحساب بتسجيل الدخول.", firstLogin: "فرض تغيير كلمة المرور.",
@@ -164,6 +167,7 @@ export default function UserForm({
         telephone: initial?.telephone ?? '',
         birthday: initial?.birthday ?? '',
         image_url: initial?.image_url ?? '',
+        gender: (initial as any)?.gender ?? undefined,
     })
     const [imageFile, setImageFile] = useState<File | null>(null)
     const [allRoles, setAllRoles] = useState<Role[]>([])
@@ -183,7 +187,13 @@ export default function UserForm({
             ? (Number((initial as any).isactive) === 1 || (initial as any).isactive === true)
             : true
     ))
-    const [isFirstLogin, setIsFirstLogin] = useState<boolean>(mode === 'create' ? true : false)
+    const [isFirstLogin, setIsFirstLogin] = useState<boolean>(
+        mode === 'create' ? true : (
+            typeof (initial as any)?.isfirstlogin !== 'undefined'
+                ? (Number((initial as any).isfirstlogin) === 1 || (initial as any).isfirstlogin === true)
+                : false
+        )
+    )
 
     useEffect(() => {
         async function loadRoles() {
@@ -211,7 +221,8 @@ export default function UserForm({
         }
         async function loadUsers() {
             try {
-                const users = await getUsers()
+                // Fetch all users (active and inactive) for parent selection
+                const users = await getUsers({ status: 'all' })
                 setAllUsers(users)
             } catch {
                 // ignore
@@ -226,6 +237,19 @@ export default function UserForm({
         setPhone(initial?.telephone ? String(initial.telephone) : undefined)
     }, [initial?.telephone])
 
+    // When editing, ensure parent selections default to existing parents
+    useEffect(() => {
+        if (mode === 'edit') {
+            setFatherId(typeof initial?.id_father !== 'undefined' ? (initial?.id_father ?? null) : null)
+            setMotherId(typeof initial?.id_mother !== 'undefined' ? (initial?.id_mother ?? null) : null)
+        } else {
+            // create mode: no default parents
+            setFatherId(null)
+            setMotherId(null)
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [mode, initial?.id_father, initial?.id_mother])
+
     // Update activation and first-login defaults when mode/initial change
     useEffect(() => {
         if (mode === 'create') {
@@ -237,8 +261,11 @@ export default function UserForm({
                 ? (Number(rawActive) === 1 || rawActive === true)
                 : true
             setIsActive(activeVal)
-            // For update page, default first login to false
-            setIsFirstLogin(false)
+            const rawFirst = (initial as any)?.isfirstlogin
+            const firstVal = typeof rawFirst !== 'undefined'
+                ? (Number(rawFirst) === 1 || rawFirst === true)
+                : false
+            setIsFirstLogin(firstVal)
         }
     }, [mode, initial])
 
@@ -300,7 +327,7 @@ export default function UserForm({
     }, [])
 
     // Inline help modal state
-    type HelpKey = 'firstname' | 'lastname' | 'username' | 'email' | 'telephone' | 'birthday' | 'image' | 'isactive' | 'isfirstlogin' | 'father' | 'mother' | 'roles'
+    type HelpKey = 'firstname' | 'lastname' | 'username' | 'email' | 'telephone' | 'birthday' | 'image' | 'gender' | 'isactive' | 'isfirstlogin' | 'father' | 'mother' | 'roles'
     const [helpKey, setHelpKey] = useState<HelpKey | null>(null)
     const helpText: Record<HelpKey, { title: string; desc: string }> = {
         firstname: { title: t('userForm.help.firstname.title'), desc: t('userForm.help.firstname.desc') },
@@ -310,6 +337,7 @@ export default function UserForm({
         telephone: { title: t('userForm.help.telephone.title'), desc: t('userForm.help.telephone.desc') },
         birthday: { title: t('userForm.help.birthday.title'), desc: t('userForm.help.birthday.desc') },
         image: { title: t('userForm.help.image.title'), desc: t('userForm.help.image.desc') },
+        gender: { title: t('userForm.help.gender.title'), desc: t('userForm.help.gender.desc') },
         isactive: { title: t('userForm.help.isactive.title'), desc: t('userForm.help.isactive.desc') },
         isfirstlogin: { title: t('userForm.help.isfirstlogin.title'), desc: t('userForm.help.isfirstlogin.desc') },
         father: { title: t('userForm.help.father.title'), desc: t('userForm.help.father.desc') },
@@ -359,6 +387,7 @@ export default function UserForm({
                         email: form.email || undefined,
                         telephone: phone || undefined,
                         birthday: form.birthday || undefined,
+                        gender: (form as any).gender || undefined,
                         id_father: fatherId ?? null,
                         id_mother: motherId ?? null,
                         isactive: isActive ? 1 : 0,
@@ -372,6 +401,7 @@ export default function UserForm({
                         email: form.email || undefined,
                         telephone: phone || undefined,
                         birthday: form.birthday || undefined,
+                        gender: (form as any).gender || undefined,
                         id_father: fatherId ?? null,
                         id_mother: motherId ?? null,
                         isactive: isActive ? 1 : 0,
@@ -401,6 +431,7 @@ export default function UserForm({
                         email: form.email || undefined,
                         telephone: phone || undefined,
                         birthday: form.birthday || undefined,
+                        gender: (form as any).gender || undefined,
                         id_father: fatherId ?? undefined,
                         id_mother: motherId ?? undefined,
                         isactive: isActive ? 1 : 0,
@@ -415,6 +446,7 @@ export default function UserForm({
                         telephone: phone || undefined,
                         birthday: form.birthday || undefined,
                         image_url: form.image_url || undefined,
+                        gender: (form as any).gender || undefined,
                         id_father: fatherId ?? undefined,
                         id_mother: motherId ?? undefined,
                         isactive: isActive ? 1 : 0,
@@ -447,11 +479,65 @@ export default function UserForm({
         }
     }
 
-    // Options for react-select
-    const userOptions = allUsers.map(u => ({
+    // Options for react-select (show all users regardless of active status),
+    // but exclude the current user and anyone not older than the current user.
+    const currentBirthDate = form.birthday ? new Date(String(form.birthday)) : null
+    const hasValidDate = (d: Date | null) => !!d && !isNaN(d.getTime())
+    const filteredUsers = allUsers.filter(u => {
+        // Exclude the current user in edit mode
+        if (mode === 'edit' && initial?.id && u.id === initial.id) return false
+
+        // If current user's birthdate is known, only allow users strictly older
+        if (hasValidDate(currentBirthDate)) {
+            const ub = u.birthday ? new Date(String(u.birthday)) : null
+            // If compared user's birthday unknown or invalid, we can't assert they're older → exclude
+            if (!hasValidDate(ub)) return false
+            return (ub as Date).getTime() < (currentBirthDate as Date).getTime()
+        }
+        // If current user's birthdate isn't set, we cannot determine older users → exclude
+        return false
+    })
+    // Filter by gender for parents
+    const filteredFathers = filteredUsers.filter(u => (u as any).gender === 'male')
+    const filteredMothers = filteredUsers.filter(u => (u as any).gender === 'female')
+
+    const toOption = (u: User) => ({
         value: u.id,
         label: `${u.firstname || ''} ${u.lastname || ''} (${u.username || ''})`.trim(),
-    }))
+    })
+
+    let fatherOptions = filteredFathers.map(toOption)
+    let motherOptions = filteredMothers.map(toOption)
+
+    // In edit mode, ensure existing parents appear in the dropdown even if filtered out by age
+    if (mode === 'edit') {
+        if (fatherId !== null) {
+            const fu = allUsers.find(u => u.id === fatherId)
+            if (fu && (fu as any).gender === 'male' && !fatherOptions.some(o => o.value === fu.id)) {
+                fatherOptions = [...fatherOptions, toOption(fu as User)]
+            }
+        }
+        if (motherId !== null) {
+            const mu = allUsers.find(u => u.id === motherId)
+            if (mu && (mu as any).gender === 'female' && !motherOptions.some(o => o.value === mu.id)) {
+                motherOptions = [...motherOptions, toOption(mu as User)]
+            }
+        }
+    }
+
+    // Ensure currently selected parent respects gender constraint
+    useEffect(() => {
+        if (fatherId !== null) {
+            const u = allUsers.find(x => x.id === fatherId)
+            if (!u || (u as any).gender !== 'male') setFatherId(null)
+        }
+    }, [allUsers, fatherId])
+    useEffect(() => {
+        if (motherId !== null) {
+            const u = allUsers.find(x => x.id === motherId)
+            if (!u || (u as any).gender !== 'female') setMotherId(null)
+        }
+    }, [allUsers, motherId])
 
     const previewUrl = imageFile ? URL.createObjectURL(imageFile) : (form.image_url ? (form.image_url.startsWith('http') ? form.image_url : form.image_url) : null)
 
@@ -560,6 +646,36 @@ export default function UserForm({
                                     <label className="form-label small text-muted">{t('userForm.labels.birthday')}</label>
                                     <input type="date" className="form-control" value={form.birthday || ''} onChange={e => setForm(f => ({ ...f, birthday: e.target.value }))} />
                                 </div>
+                                <div className="col-md-6">
+                                    <div className="d-flex justify-content-between align-items-center">
+                                        <label className="form-label small text-muted mb-1">{t('userForm.labels.gender')}</label>
+                                        <i className="bi bi-info-circle text-muted" onClick={() => setHelpKey('gender')} style={{ cursor: 'pointer' }}></i>
+                                    </div>
+                                    <div className="d-flex gap-3 align-items-center">
+                                        <div className="form-check">
+                                            <input
+                                                className="form-check-input"
+                                                type="radio"
+                                                name="gender"
+                                                id="gender-male"
+                                                checked={(form as any).gender === 'male'}
+                                                onChange={() => setForm(f => ({ ...f, gender: 'male' as any }))}
+                                            />
+                                            <label className="form-check-label" htmlFor="gender-male">{i18n.language === 'fr' ? 'Homme' : i18n.language === 'ar' ? 'ذكر' : 'Male'}</label>
+                                        </div>
+                                        <div className="form-check">
+                                            <input
+                                                className="form-check-input"
+                                                type="radio"
+                                                name="gender"
+                                                id="gender-female"
+                                                checked={(form as any).gender === 'female'}
+                                                onChange={() => setForm(f => ({ ...f, gender: 'female' as any }))}
+                                            />
+                                            <label className="form-check-label" htmlFor="gender-female">{i18n.language === 'fr' ? 'Femme' : i18n.language === 'ar' ? 'أنثى' : 'Female'}</label>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                         </div>
 
@@ -631,9 +747,9 @@ export default function UserForm({
                                     <Select
                                         isClearable
                                         classNamePrefix="select"
-                                        options={userOptions}
+                                        options={fatherOptions}
                                         placeholder={t('userForm.placeholders.selectFather')}
-                                        value={userOptions.find(o => o.value === fatherId) ?? null}
+                                        value={fatherOptions.find(o => o.value === fatherId) ?? null}
                                         onChange={(opt) => setFatherId(opt ? (opt as { value: number; label: string }).value : null)}
                                         styles={{ control: (base) => ({ ...base, borderColor: '#dee2e6', boxShadow: 'none' }) }}
                                     />
@@ -643,9 +759,9 @@ export default function UserForm({
                                     <Select
                                         isClearable
                                         classNamePrefix="select"
-                                        options={userOptions}
+                                        options={motherOptions}
                                         placeholder={t('userForm.placeholders.selectMother')}
-                                        value={userOptions.find(o => o.value === motherId) ?? null}
+                                        value={motherOptions.find(o => o.value === motherId) ?? null}
                                         onChange={(opt) => setMotherId(opt ? (opt as { value: number; label: string }).value : null)}
                                         styles={{ control: (base) => ({ ...base, borderColor: '#dee2e6', boxShadow: 'none' }) }}
                                     />

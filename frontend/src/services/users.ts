@@ -9,6 +9,7 @@ export type User = {
     telephone?: string
     birthday?: string
     image_url?: string
+    gender?: 'male' | 'female' | null
     id_father?: number | null
     id_mother?: number | null
     // Activation and first-login flags (numeric per backend: 1/0)
@@ -55,6 +56,7 @@ export async function createUser(user: {
     telephone?: string
     birthday?: string
     image_url?: string
+    gender?: 'male' | 'female' | null
     id_father?: number | null
     id_mother?: number | null
     isactive?: number
@@ -98,6 +100,7 @@ export async function createUserWithImage(fields: {
     email?: string
     telephone?: string
     birthday?: string
+    gender?: 'male' | 'female' | null
     id_father?: number | null
     id_mother?: number | null
     isactive?: number
@@ -111,6 +114,7 @@ export async function createUserWithImage(fields: {
     if (fields.email) form.append('email', fields.email)
     if (fields.telephone) form.append('telephone', fields.telephone)
     if (fields.birthday) form.append('birthday', fields.birthday)
+    if (fields.gender) form.append('gender', fields.gender)
     if (typeof fields.id_father !== 'undefined' && fields.id_father !== null) form.append('id_father', String(fields.id_father))
     if (typeof fields.id_mother !== 'undefined' && fields.id_mother !== null) form.append('id_mother', String(fields.id_mother))
     if (typeof fields.isactive !== 'undefined') form.append('isactive', String(fields.isactive))
@@ -133,6 +137,7 @@ export async function updateUserByIdWithImage(id: number, fields: Partial<User> 
     if (fields.email) form.append('email', fields.email)
     if (fields.telephone) form.append('telephone', fields.telephone)
     if (fields.birthday) form.append('birthday', fields.birthday)
+    if (fields.gender) form.append('gender', fields.gender)
     if (typeof fields.id_father !== 'undefined' && fields.id_father !== null) form.append('id_father', String(fields.id_father))
     if (typeof fields.id_mother !== 'undefined' && fields.id_mother !== null) form.append('id_mother', String(fields.id_mother))
     if (typeof fields.isactive !== 'undefined') form.append('isactive', String(fields.isactive))

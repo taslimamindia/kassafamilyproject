@@ -28,18 +28,25 @@ class UserBase(BaseModel):
     telephone: Optional[str] = None
     birthday: Optional[str] = None
     image_url: Optional[str] = None
+    # 'male' | 'female'
+    gender: Optional[str] = None
 
 class UserUpdate(UserBase):
     pass
     # Validator inherited via Mixin? No, field_validator needs to be applied to specific fields or *
     
-    @field_validator('email', 'telephone', 'birthday', 'image_url', mode='before')
+    @field_validator('email', 'telephone', 'birthday', 'image_url', 'gender', mode='before')
     @classmethod
     def _empty_to_none(cls, v):
         if v is None:
             return None
         if isinstance(v, str) and v.strip() == "":
             return None
+        if isinstance(v, str):
+            vv = v.strip().lower()
+            if vv not in ("male", "female"):
+                return v  # ignore strict validation here; DB may accept broader values
+            return vv
         return v
 
 class UserCreate(UserBase):
@@ -51,13 +58,18 @@ class UserCreate(UserBase):
     id_father: Optional[int] = None
     id_mother: Optional[int] = None
 
-    @field_validator('email', 'telephone', 'birthday', 'image_url', mode='before')
+    @field_validator('email', 'telephone', 'birthday', 'image_url', 'gender', mode='before')
     @classmethod
     def _empty_to_none(cls, v):
         if v is None:
             return None
         if isinstance(v, str) and v.strip() == "":
             return None
+        if isinstance(v, str):
+            vv = v.strip().lower()
+            if vv in ("male", "female"):
+                return vv
+            return v
         return v
 
 class UserAdminUpdate(UserBase):
@@ -66,13 +78,18 @@ class UserAdminUpdate(UserBase):
     isactive: Optional[int] = None
     isfirstlogin: Optional[int] = None
 
-    @field_validator('email', 'telephone', 'birthday', 'image_url', mode='before')
+    @field_validator('email', 'telephone', 'birthday', 'image_url', 'gender', mode='before')
     @classmethod
     def _empty_to_none(cls, v):
         if v is None:
             return None
         if isinstance(v, str) and v.strip() == "":
             return None
+        if isinstance(v, str):
+            vv = v.strip().lower()
+            if vv in ("male", "female"):
+                return vv
+            return v
         return v
 
 class Role(BaseModel):
