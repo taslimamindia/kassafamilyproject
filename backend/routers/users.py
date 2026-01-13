@@ -6,10 +6,11 @@ from datetime import datetime
 
 from dependencies import get_cursor, get_current_user, has_role
 from models import UserCreate, UserAdminUpdate, UserUpdate
-from utils import parse_create_request, parse_update_request, generate_username_logic
+from utils import parse_create_request, parse_update_request, generate_username_logic, ensure_unique_username
 from auth_utils import hash_password
 from settings import settings
 from aws_file import AwsFile
+
 
 router = APIRouter()
 logger = logging.getLogger("users")
@@ -44,6 +45,7 @@ def get_members(request: Request, cursor = Depends(get_cursor), current_user: di
     # Admin sees all; group admin sees only users sharing same father or same mother; include the parents themselves as well
     is_admin = has_role(cursor, current_user["id"], "admin")
     is_group_admin = has_role(cursor, current_user["id"], "admingroup")
+    
     # Query filters: status (active/inactive/all), first_login (yes/no/all), q (search)
     qp = request.query_params
     status = (qp.get("status") or "active").lower()
@@ -55,15 +57,21 @@ def get_members(request: Request, cursor = Depends(get_cursor), current_user: di
     if status in {"active", "inactive"}:
         extra_where.append("u.isactive = %s")
         extra_vals.append(1 if status == "active" else 0)
+        
     # first_login filter
     if first_login in {"yes", "no"}:
         extra_where.append("u.isfirstlogin = %s")
         extra_vals.append(1 if first_login == "yes" else 0)
+    
     # search filter across common fields
     if q:
         like = f"%{q}%"
         extra_where.append("(CAST(u.id AS CHAR) LIKE %s OR u.firstname LIKE %s OR u.lastname LIKE %s OR u.username LIKE %s OR u.email LIKE %s OR u.telephone LIKE %s OR u.birthday LIKE %s)")
         extra_vals.extend([like, like, like, like, like, like, like])
+    
+    
+    
+    
     if is_admin:
         base_sql = (
             """
@@ -80,6 +88,8 @@ def get_members(request: Request, cursor = Depends(get_cursor), current_user: di
     elif is_group_admin:
         fid = current_user.get("id_father")
         mid = current_user.get("id_mother")
+        
+        # For admin group add where conditions to get users createdby himself
         base_sql = (
             """
             SELECT u.*, r.id AS role_id, r.role AS role_name
@@ -90,13 +100,13 @@ def get_members(request: Request, cursor = Depends(get_cursor), current_user: di
                 (%s IS NOT NULL AND (u.id_father = %s OR u.id = %s))
                 OR (%s IS NOT NULL AND (u.id_mother = %s OR u.id = %s))
                 OR u.id = %s
+                OR u.createdby = %s
             )
             {and_extra}
-            ORDER BY u.id, r.id
             """
         )
         and_extra = (" AND " + " AND ".join(extra_where)) if extra_where else ""
-        vals = [fid, fid, fid, mid, mid, mid, current_user.get("id")] + extra_vals
+        vals = [fid, fid, fid, mid, mid, mid, current_user.get("id"), current_user.get("id")] + extra_vals
         cursor.execute(base_sql.format(and_extra=and_extra), tuple(vals))
     else:
         # Regular users see only themselves
@@ -108,7 +118,6 @@ def get_members(request: Request, cursor = Depends(get_cursor), current_user: di
             LEFT JOIN roles r ON r.id = ra.roles_id
             WHERE u.id = %s
             {and_extra}
-            ORDER BY u.id, r.id
             """
         )
         and_extra = (" AND " + " AND ".join(extra_where)) if extra_where else ""
@@ -145,10 +154,10 @@ async def create_user(request: Request, cursor = Depends(get_cursor), current_us
         except ValueError as e:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
     else:
-        # Check uniqueness of provided username
-        cursor.execute("SELECT id FROM users WHERE username = %s LIMIT 1", (body.username,))
-        if cursor.fetchone():
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Ce nom d'utilisateur est déjà pris.")
+        try:
+            body.username = ensure_unique_username(body.username, cursor)
+        except ValueError as e:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
 
     if upload is not None:
         try:
@@ -239,32 +248,44 @@ async def update_user_by_id(user_id: int, request: Request, cursor = Depends(get
         logger.info("[users] Image reçue (mise à jour id=%s): filename=%s, content_type=%s", user_id, getattr(upload, "filename", None), getattr(upload, "content_type", None))
     else:
         logger.info("[users] Aucune image reçue (mise à jour id=%s)", user_id)
+    raw_remove = data.pop('remove_image', False)
+    if isinstance(raw_remove, str):
+        remove_image_flag = raw_remove.strip().lower() in {"1", "true", "yes", "on"}
+    else:
+        remove_image_flag = bool(raw_remove)
+
     body = UserAdminUpdate(**data)
-    
+
+    cursor.execute("SELECT * FROM users WHERE id = %s", (user_id,))
+    row_curr = cursor.fetchone()
+    if not row_curr:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    if upload is not None:
+        remove_image_flag = False
+
     fields = []
     values: List[object] = []
-    
-    if body.firstname is not None: fields.append("firstname = %s"); values.append(body.firstname)
-    if body.lastname is not None: fields.append("lastname = %s"); values.append(body.lastname)
+
+    if body.firstname is not None:
+        fields.append("firstname = %s"); values.append(body.firstname)
+    if body.lastname is not None:
+        fields.append("lastname = %s"); values.append(body.lastname)
     if body.username is not None:
-        # If a username is provided, generate a unique combination based on it
         from utils import ensure_unique_username
         try:
             unique_uname = ensure_unique_username(body.username, cursor, exclude_user_id=user_id)
         except ValueError as e:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
         fields.append("username = %s"); values.append(unique_uname)
-    if body.email is not None: fields.append("email = %s"); values.append(body.email)
-    if body.telephone is not None: fields.append("telephone = %s"); values.append(body.telephone)
-    if body.birthday is not None: fields.append("birthday = %s"); values.append(body.birthday)
-    if body.image_url is not None: fields.append("image_url = %s"); values.append(body.image_url)
-    if body.gender is not None: fields.append("gender = %s"); values.append(body.gender)
-    
-    # Parent logic validation same as original...
-    cursor.execute("SELECT id_father, id_mother, username FROM users WHERE id = %s", (user_id,))
-    row_curr = cursor.fetchone()
-    if not row_curr:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    if body.email is not None:
+        fields.append("email = %s"); values.append(body.email)
+    if body.telephone is not None:
+        fields.append("telephone = %s"); values.append(body.telephone)
+    if body.birthday is not None:
+        fields.append("birthday = %s"); values.append(body.birthday)
+    if body.gender is not None:
+        fields.append("gender = %s"); values.append(body.gender)
 
     # Authorization: admin ok; group admin only if target is in same group; others forbidden
     if not has_role(cursor, current_user["id"], "admin"):
@@ -301,6 +322,18 @@ async def update_user_by_id(user_id: int, request: Request, cursor = Depends(get
     if curr_father and curr_mother and curr_father == curr_mother:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Le père et la mère doivent être différents")
         
+    if remove_image_flag:
+        old_url = row_curr.get("image_url")
+        if old_url:
+            try:
+                service = AwsFile(settings)
+                service.delete_image(old_url)
+            except Exception as exc:
+                logger.warning("[users] Impossible de supprimer l'image existante (id=%s): %s", user_id, exc)
+        fields.append("image_url = %s"); values.append(None)
+    elif body.image_url is not None and upload is None:
+        fields.append("image_url = %s"); values.append(body.image_url)
+
     if body.isactive is not None: fields.append("isactive = %s"); values.append(body.isactive)
     if body.isfirstlogin is not None: fields.append("isfirstlogin = %s"); values.append(body.isfirstlogin)
     
