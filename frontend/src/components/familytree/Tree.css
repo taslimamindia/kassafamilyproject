@@ -1,0 +1,81 @@
+/* Tree.css */
+.tree-wrapper {
+    width: 100%;
+    height: 100dvh;
+    background-color: #f8f9fa;
+}
+
+/* --- Style of the card Node --- */
+.family-card {
+    border: none !important;
+    /* Hover effect to invite clicking */
+    transition: transform 0.2s, box-shadow 0.2s;
+    cursor: pointer;
+    background: white;
+    border-radius: 12px !important;
+}
+
+.family-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1) !important;
+    border-color: #0d6efd !important;
+}
+
+/* --- Avatar (Circle) --- */
+.node-avatar {
+    width: 60px;
+    height: 60px;
+    object-fit: cover;
+    border: 3px solid #fff;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+}
+
+.node-avatar-placeholder {
+    width: 60px;
+    height: 60px;
+    font-size: 1.2rem;
+    font-weight: bold;
+    border: 3px solid #fff;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+}
+
+/* --- Responsive (Mobile) --- */
+@media (max-width: 768px) {
+
+    .node-avatar,
+    .node-avatar-placeholder {
+        width: 45px;
+        height: 45px;
+        font-size: 0.9rem;
+    }
+
+    .family-card h6 {
+        font-size: 0.8rem !important;
+    }
+
+    .family-card small {
+        font-size: 0.7rem;
+    }
+
+    .family-card button {
+        font-size: 0.6rem !important;
+    }
+}
+
+/* --- Styles React Flow (Surcharges) --- */
+.react-flow__node-familyNode {
+    background: transparent !important;
+    border: none !important;
+    padding: 0 !important;
+}
+
+/* Colors of the links */
+.react-flow__edge.edge-father path {
+    stroke: #0d6efd !important;
+    stroke-width: 2px;
+}
+
+.react-flow__edge.edge-mother path {
+    stroke: #d63384 !important;
+    stroke-width: 2px;
+}
