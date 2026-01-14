@@ -98,6 +98,12 @@ async def parse_update_request(request: Request) -> Tuple[dict, Optional[UploadF
                 "isactive": _int("isactive"),
                 "isfirstlogin": _int("isfirstlogin"),
             }
+            remove_image_raw = form.get("remove_image")
+            remove_image = False
+            if remove_image_raw is not None:
+                remove_image = str(remove_image_raw).strip().lower() in {"1", "true", "yes", "on"}
+            if remove_image:
+                data["remove_image"] = True
             upload = form.get("file")
             logger.info("[users] parse_update_request: form['file'] type=%s", type(upload).__name__ if upload is not None else None)
             # Consider file present only if it has a non-empty filename
@@ -127,6 +133,12 @@ async def parse_update_request(request: Request) -> Tuple[dict, Optional[UploadF
                 with_image = 0
             logger.info("[users] update intent (JSON): with_image=%s", with_image)
             jb = dict(json_body)
+            if "remove_image" in jb:
+                rem = jb.get("remove_image")
+                if isinstance(rem, str):
+                    jb["remove_image"] = rem.strip().lower() in {"1", "true", "yes", "on"}
+                else:
+                    jb["remove_image"] = bool(rem)
             jb.pop("with_image", None)
             return jb, None
     except Exception as e:
@@ -152,22 +164,45 @@ def ensure_unique_username(desired: str, cursor, exclude_user_id: Optional[int] 
     """Ensure uniqueness by appending a numeric suffix when needed.
     If `exclude_user_id` is provided, the current user's username won't count as a collision.
     """
+    import string
     base = (desired or '').strip()
     if base == '':
         raise ValueError("Nom d'utilisateur vide")
-    # Try without suffix first, then with incremental suffixes
-    for i in range(max_tries):
-        candidate = base if i == 0 else f"{base}{i}"
+    # Try without suffix first
+    candidate = base
+    cursor.execute("SELECT id FROM users WHERE username = %s LIMIT 1", (candidate,))
+    row = cursor.fetchone()
+    if not row:
+        return candidate
+    if exclude_user_id is not None:
+        found_id = row[0] if not isinstance(row, dict) else row.get('id')
+        if found_id == exclude_user_id:
+            return candidate
+
+    # Try with a-z appended
+    for letter in string.ascii_lowercase:
+        candidate = f"{base}{letter}"
         cursor.execute("SELECT id FROM users WHERE username = %s LIMIT 1", (candidate,))
         row = cursor.fetchone()
         if not row:
             return candidate
-        # If the row is the same as exclude_user_id, it's okay to reuse
         if exclude_user_id is not None:
-            # row may be dict or tuple depending on cursor config
             found_id = row[0] if not isinstance(row, dict) else row.get('id')
             if found_id == exclude_user_id:
                 return candidate
+
+    # Try with a-z and numeric suffix
+    for letter in string.ascii_lowercase:
+        for i in range(1, max_tries):
+            candidate = f"{base}{letter}{i}"
+            cursor.execute("SELECT id FROM users WHERE username = %s LIMIT 1", (candidate,))
+            row = cursor.fetchone()
+            if not row:
+                return candidate
+            if exclude_user_id is not None:
+                found_id = row[0] if not isinstance(row, dict) else row.get('id')
+                if found_id == exclude_user_id:
+                    return candidate
     raise ValueError("Impossible de générer un nom d'utilisateur unique")
 
 def generate_username_logic(firstname: str, lastname: str, birthday: Optional[str], cursor) -> str:

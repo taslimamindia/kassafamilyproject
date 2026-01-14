@@ -22,6 +22,7 @@ const headerResources = {
             profile: 'Profil',
             admin: 'Admin',
             users: 'Utilisateurs',
+            tree: 'Arbre généalogique',
         },
     },
     en: {
@@ -36,6 +37,7 @@ const headerResources = {
             profile: 'Profile',
             admin: 'Admin',
             users: 'Users',
+            tree: 'Family Tree',
         },
     },
     ar: {
@@ -50,6 +52,7 @@ const headerResources = {
             profile: 'الملف الشخصي',
             admin: 'المشرف',
             users: 'المستخدمون',
+            tree: 'الشجرة العائلية',
         },
     },
 }
@@ -128,14 +131,22 @@ function Header() {
                 </button>
                 <div className="collapse navbar-collapse" id="mainNavbar">
                     <ul className="navbar-nav ms-lg-auto mb-2 mb-lg-0 gap-lg-2 align-items-lg-center">
-                        
+
                         {isAuth && (
-                            <li className="nav-item">
-                                <NavLink to="/user" className={({ isActive }) => `nav-link d-flex align-items-center gap-2 ${isActive ? 'active' : ''}`}>
-                                    <i className="bi bi-house-heart" aria-hidden="true"></i>
-                                    {t('nav.users')}
-                                </NavLink>
-                            </li>
+                            <>
+                                <li className="nav-item">
+                                    <NavLink to="/user" className={({ isActive }) => `nav-link d-flex align-items-center gap-2 ${isActive ? 'active' : ''}`}>
+                                        <i className="bi bi-house-heart" aria-hidden="true"></i>
+                                        {t('nav.users')}
+                                    </NavLink>
+                                </li>
+                                <li className="nav-item">
+                                    <NavLink to="/tree" className={({ isActive }) => `nav-link d-flex align-items-center gap-2 ${isActive ? 'active' : ''}`}>
+                                        <i className="bi bi-people" aria-hidden="true"></i>
+                                        {t('nav.tree')}
+                                    </NavLink>
+                                </li>
+                            </>
                         )}
 
                         {isAuth && isAdmin && (

@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef } from 'react'
-import { createUser, updateUserById, type User, createUserWithImage, updateUserByIdWithImage, getUsers } from '../../../services/users'
+import { createUser, type User, createUserWithImage, getUsers } from '../../../services/users'
 import { getRoles, type Role } from '../../../services/roles'
-import { assignRoleToUser, getRolesForUser, removeRoleFromUser } from '../../../services/roleAttributions'
+import { assignRoleToUser } from '../../../services/roleAttributions'
 import PhoneInput, { isValidPhoneNumber } from 'react-phone-number-input'
 import 'react-phone-number-input/style.css'
 import Select from 'react-select'
@@ -110,7 +110,7 @@ const userFormResources = {
                 isactive: { title: "مستخدم نشط", desc: "قم بالتفعيل للسماح بتسجيل دخول المستخدم. قم بالتعطيل لمنع الوصول." },
                 isfirstlogin: { title: "أول تسجيل دخول", desc: "قم بالتفعيل إذا كان يجب على المستخدم تغيير كلمة المرور عند أول تسجيل دخول." },
                 father: { title: "الأب", desc: "اختر الوالد (الأب) إذا كان مسجلاً بالفعل. اختياري." },
-                mother: { title: "الأم", desc: "اختر الوالدة (الأم) إذا كانت مسجلة بالفعل. اختياري." },
+                mother: { title: "الأم", desc: "اختر والدة (الأم) إذا كانت مسجلة بالفعل. اختياري." },
                 roles: { title: "الأدوار", desc: "حدد الأدوار لتعيينها للمستخدم (مثل: admin, user)." },
             },
             title: { create: "إنشاء مستخدم", edit: "تعديل الملف الشخصي" },
@@ -145,14 +145,12 @@ for (const [lng, res] of Object.entries(userFormResources)) {
     i18n.addResourceBundle(lng, 'translation', res as any, true, false)
 }
 
-export default function UserForm({
-    mode,
+export default function AddUserForm({
     initial,
     onSaved,
     onCancel,
     allowedRoleNames,
 }: {
-    mode: 'create' | 'edit'
     initial?: Partial<User>
     onSaved: (user: User) => void
     onCancel: () => void
@@ -175,53 +173,26 @@ export default function UserForm({
     const [allUsers, setAllUsers] = useState<User[]>([])
     const [fatherId, setFatherId] = useState<number | null>(initial?.id_father ?? null)
     const [motherId, setMotherId] = useState<number | null>(initial?.id_mother ?? null)
-    // react-select provides built-in search for parents
     const [saving, setSaving] = useState(false)
     const [error, setError] = useState<string | null>(null)
     const [emailError, setEmailError] = useState<string | null>(null)
     const [phoneError, setPhoneError] = useState<string | null>(null)
     const [phone, setPhone] = useState<string | undefined>(initial?.telephone ? String(initial.telephone) : undefined)
-    // Activation & first-login flags (booleans for UI, mapped to 1/0 for API)
-    const [isActive, setIsActive] = useState<boolean>(mode === 'create' ? true : (
-        typeof (initial as any)?.isactive !== 'undefined'
-            ? (Number((initial as any).isactive) === 1 || (initial as any).isactive === true)
-            : true
-    ))
-    const [isFirstLogin, setIsFirstLogin] = useState<boolean>(
-        mode === 'create' ? true : (
-            typeof (initial as any)?.isfirstlogin !== 'undefined'
-                ? (Number((initial as any).isfirstlogin) === 1 || (initial as any).isfirstlogin === true)
-                : false
-        )
-    )
+    const [isActive, setIsActive] = useState<boolean>(true)
+    const [isFirstLogin, setIsFirstLogin] = useState<boolean>(true)
 
     useEffect(() => {
         async function loadRoles() {
             try {
                 const roles = await getRoles()
                 setAllRoles(roles)
-                if (mode === 'edit' && initial?.id) {
-                    const current = await getRolesForUser(initial.id)
-                    // If restricted, pre-select only allowed ones
-                    const currentIds = current.map(r => r.id)
-                    if (allowedRoleNames && allowedRoleNames.length > 0) {
-                        const allowedIds = new Set(
-                            roles
-                                .filter(r => allowedRoleNames.map(n => n.toLowerCase()).includes(String(r.role).toLowerCase()))
-                                .map(r => r.id)
-                        )
-                        setSelectedRoleIds(currentIds.filter(id => allowedIds.has(id)))
-                    } else {
-                        setSelectedRoleIds(currentIds)
-                    }
-                }
+                // In create mode, do not pre-select roles
             } catch {
                 // ignore errors for roles loading
             }
         }
         async function loadUsers() {
             try {
-                // Fetch all users (active and inactive) for parent selection
                 const users = await getUsers({ status: 'all' })
                 setAllUsers(users)
             } catch {
@@ -230,48 +201,25 @@ export default function UserForm({
         }
         loadRoles()
         loadUsers()
-    }, [mode, initial?.id])
+    }, [])
 
-    // Keep phone state in sync when `initial.telephone` changes
     useEffect(() => {
         setPhone(initial?.telephone ? String(initial.telephone) : undefined)
     }, [initial?.telephone])
 
-    // When editing, ensure parent selections default to existing parents
     useEffect(() => {
-        if (mode === 'edit') {
-            setFatherId(typeof initial?.id_father !== 'undefined' ? (initial?.id_father ?? null) : null)
-            setMotherId(typeof initial?.id_mother !== 'undefined' ? (initial?.id_mother ?? null) : null)
-        } else {
-            // create mode: no default parents
-            setFatherId(null)
-            setMotherId(null)
-        }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [mode, initial?.id_father, initial?.id_mother])
+        // create mode: no default parents
+        setFatherId(null)
+        setMotherId(null)
+    }, [])
 
-    // Update activation and first-login defaults when mode/initial change
     useEffect(() => {
-        if (mode === 'create') {
-            setIsActive(true)
-            setIsFirstLogin(true)
-        } else {
-            const rawActive = (initial as any)?.isactive
-            const activeVal = typeof rawActive !== 'undefined'
-                ? (Number(rawActive) === 1 || rawActive === true)
-                : true
-            setIsActive(activeVal)
-            const rawFirst = (initial as any)?.isfirstlogin
-            const firstVal = typeof rawFirst !== 'undefined'
-                ? (Number(rawFirst) === 1 || rawFirst === true)
-                : false
-            setIsFirstLogin(firstVal)
-        }
-    }, [mode, initial])
+        setIsActive(true)
+        setIsFirstLogin(true)
+    }, [])
 
     function isValidEmail(val?: string | null): boolean {
         if (!val) return true
-        // basic email pattern
         return /\S+@\S+\.\S+/.test(val)
     }
 
@@ -289,13 +237,11 @@ export default function UserForm({
 
     const suggestedUsername = computeSuggestedUsername(form.firstname, form.lastname, form.birthday)
 
-    // Typewriter animation for auto-filling suggested username
     const [isTypingUsername, setIsTypingUsername] = useState(false)
     const typingTimer = useRef<number | null>(null)
 
     function animateFillUsername(target: string) {
         if (!target) return
-        // Cancel any in-progress animation
         if (typingTimer.current) {
             window.clearInterval(typingTimer.current)
             typingTimer.current = null
@@ -326,7 +272,6 @@ export default function UserForm({
         }
     }, [])
 
-    // Inline help modal state
     type HelpKey = 'firstname' | 'lastname' | 'username' | 'email' | 'telephone' | 'birthday' | 'image' | 'gender' | 'isactive' | 'isfirstlogin' | 'father' | 'mother' | 'roles'
     const [helpKey, setHelpKey] = useState<HelpKey | null>(null)
     const helpText: Record<HelpKey, { title: string; desc: string }> = {
@@ -349,13 +294,10 @@ export default function UserForm({
         setError(null)
         setEmailError(null)
         setPhoneError(null)
-        // Validate parents differ
         if (fatherId !== null && motherId !== null && fatherId === motherId) {
             setError(t('userForm.errors.parentsMustBeDifferent'))
             return
-        
-        // Validate Latin characters only
-        // Accepts: A-Z, 0-9, standard punctuation, and French accents
+        }
         const latinRegex = /^[a-zA-Z0-9\s\-_@.,'éàèùâêîôûëïüÿçÉÀÈÙÂÊÎÔÛËÏÜŸÇ]*$/
         if (
             !latinRegex.test(form.firstname || '') || 
@@ -364,8 +306,6 @@ export default function UserForm({
         ) {
             setError(t('userForm.errors.invalidCharacters'))
             return
-        }
-
         }
         if (!isValidEmail(form.email || null)) {
             setEmailError(t('userForm.errors.invalidEmail'))
@@ -377,101 +317,47 @@ export default function UserForm({
         }
         setSaving(true)
         try {
-            if (mode === 'create') {
-                let created: User
-                if (imageFile) {
-                    created = await createUserWithImage({
-                        firstname: form.firstname || '',
-                        lastname: form.lastname || '',
-                        username: form.username ? String(form.username) : undefined,
-                        email: form.email || undefined,
-                        telephone: phone || undefined,
-                        birthday: form.birthday || undefined,
-                        gender: (form as any).gender || undefined,
-                        id_father: fatherId ?? null,
-                        id_mother: motherId ?? null,
-                        isactive: isActive ? 1 : 0,
-                        isfirstlogin: isFirstLogin ? 1 : 0,
-                    }, imageFile)
-                } else {
-                    created = await createUser({
-                        firstname: form.firstname || '',
-                        lastname: form.lastname || '',
-                        username: form.username ? String(form.username) : undefined,
-                        email: form.email || undefined,
-                        telephone: phone || undefined,
-                        birthday: form.birthday || undefined,
-                        gender: (form as any).gender || undefined,
-                        id_father: fatherId ?? null,
-                        id_mother: motherId ?? null,
-                        isactive: isActive ? 1 : 0,
-                        isfirstlogin: isFirstLogin ? 1 : 0,
-                    })
-                }
-                // Assign selected roles (filter out any stale/invalid role ids)
-                let validRoleIds = selectedRoleIds.filter(rid => allRoles.some(r => r.id === rid))
-                if (allowedRoleNames && allowedRoleNames.length > 0) {
-                    const allowedIds = new Set(
-                        allRoles
-                            .filter(r => allowedRoleNames.map(n => n.toLowerCase()).includes(String(r.role).toLowerCase()))
-                            .map(r => r.id)
-                    )
-                    validRoleIds = validRoleIds.filter(id => allowedIds.has(id))
-                }
-                await Promise.all(validRoleIds.map(rid => assignRoleToUser(created.id, rid)))
-                onSaved(created)
+            let created: User
+            if (imageFile) {
+                created = await createUserWithImage({
+                    firstname: form.firstname || '',
+                    lastname: form.lastname || '',
+                    username: form.username ? String(form.username) : undefined,
+                    email: form.email || undefined,
+                    telephone: phone || undefined,
+                    birthday: form.birthday || undefined,
+                    gender: (form as any).gender || undefined,
+                    id_father: fatherId ?? null,
+                    id_mother: motherId ?? null,
+                    isactive: isActive ? 1 : 0,
+                    isfirstlogin: isFirstLogin ? 1 : 0,
+                }, imageFile)
             } else {
-                const id = (initial as User).id
-                let updated: User
-                if (imageFile) {
-                    updated = await updateUserByIdWithImage(id, {
-                        username: form.username ? String(form.username) : undefined,
-                        firstname: form.firstname,
-                        lastname: form.lastname,
-                        email: form.email || undefined,
-                        telephone: phone || undefined,
-                        birthday: form.birthday || undefined,
-                        gender: (form as any).gender || undefined,
-                        id_father: fatherId ?? undefined,
-                        id_mother: motherId ?? undefined,
-                        isactive: isActive ? 1 : 0,
-                        isfirstlogin: isFirstLogin ? 1 : 0,
-                    }, imageFile)
-                } else {
-                    updated = await updateUserById(id, {
-                        username: form.username ? String(form.username) : undefined,
-                        firstname: form.firstname,
-                        lastname: form.lastname,
-                        email: form.email || undefined,
-                        telephone: phone || undefined,
-                        birthday: form.birthday || undefined,
-                        image_url: form.image_url || undefined,
-                        gender: (form as any).gender || undefined,
-                        id_father: fatherId ?? undefined,
-                        id_mother: motherId ?? undefined,
-                        isactive: isActive ? 1 : 0,
-                        isfirstlogin: isFirstLogin ? 1 : 0,
-                    })
-                }
-                // Update role assignments (diff) – operate only on allowed roles if restricted
-                const current = await getRolesForUser(id)
-                let currentIds = new Set(current.map(r => r.id))
-                let desiredIds = new Set(selectedRoleIds)
-                if (allowedRoleNames && allowedRoleNames.length > 0) {
-                    const allowedIds = new Set(
-                        allRoles
-                            .filter(r => allowedRoleNames.map(n => n.toLowerCase()).includes(String(r.role).toLowerCase()))
-                            .map(r => r.id)
-                    )
-                    currentIds = new Set([...currentIds].filter(id2 => allowedIds.has(id2)))
-                    desiredIds = new Set([...desiredIds].filter(id2 => allowedIds.has(id2)))
-                }
-                // Remove roles not desired
-                await Promise.all([...currentIds].filter(rid => !desiredIds.has(rid)).map(rid => removeRoleFromUser(id, rid)))
-                // Add roles newly desired
-                await Promise.all([...desiredIds].filter(rid => !currentIds.has(rid)).map(rid => assignRoleToUser(id, rid)))
-                onSaved(updated)
+                created = await createUser({
+                    firstname: form.firstname || '',
+                    lastname: form.lastname || '',
+                    username: form.username ? String(form.username) : undefined,
+                    email: form.email || undefined,
+                    telephone: phone || undefined,
+                    birthday: form.birthday || undefined,
+                    gender: (form as any).gender || undefined,
+                    id_father: fatherId ?? null,
+                    id_mother: motherId ?? null,
+                    isactive: isActive ? 1 : 0,
+                    isfirstlogin: isFirstLogin ? 1 : 0,
+                })
             }
+            let validRoleIds = selectedRoleIds.filter(rid => allRoles.some(r => r.id === rid))
+            if (allowedRoleNames && allowedRoleNames.length > 0) {
+                const allowedIds = new Set(
+                    allRoles
+                        .filter(r => allowedRoleNames.map(n => n.toLowerCase()).includes(String(r.role).toLowerCase()))
+                        .map(r => r.id)
+                )
+                validRoleIds = validRoleIds.filter(id => allowedIds.has(id))
+            }
+            await Promise.all(validRoleIds.map(rid => assignRoleToUser(created.id, rid)))
+            onSaved(created)
         } catch (e) {
             setError(t('userForm.errors.saveError'))
         } finally {
@@ -479,25 +365,16 @@ export default function UserForm({
         }
     }
 
-    // Options for react-select (show all users regardless of active status),
-    // but exclude the current user and anyone not older than the current user.
     const currentBirthDate = form.birthday ? new Date(String(form.birthday)) : null
     const hasValidDate = (d: Date | null) => !!d && !isNaN(d.getTime())
     const filteredUsers = allUsers.filter(u => {
-        // Exclude the current user in edit mode
-        if (mode === 'edit' && initial?.id && u.id === initial.id) return false
-
-        // If current user's birthdate is known, only allow users strictly older
         if (hasValidDate(currentBirthDate)) {
             const ub = u.birthday ? new Date(String(u.birthday)) : null
-            // If compared user's birthday unknown or invalid, we can't assert they're older → exclude
             if (!hasValidDate(ub)) return false
             return (ub as Date).getTime() < (currentBirthDate as Date).getTime()
         }
-        // If current user's birthdate isn't set, we cannot determine older users → exclude
         return false
     })
-    // Filter by gender for parents
     const filteredFathers = filteredUsers.filter(u => (u as any).gender === 'male')
     const filteredMothers = filteredUsers.filter(u => (u as any).gender === 'female')
 
@@ -509,36 +386,6 @@ export default function UserForm({
     let fatherOptions = filteredFathers.map(toOption)
     let motherOptions = filteredMothers.map(toOption)
 
-    // In edit mode, ensure existing parents appear in the dropdown even if filtered out by age
-    if (mode === 'edit') {
-        if (fatherId !== null) {
-            const fu = allUsers.find(u => u.id === fatherId)
-            if (fu && (fu as any).gender === 'male' && !fatherOptions.some(o => o.value === fu.id)) {
-                fatherOptions = [...fatherOptions, toOption(fu as User)]
-            }
-        }
-        if (motherId !== null) {
-            const mu = allUsers.find(u => u.id === motherId)
-            if (mu && (mu as any).gender === 'female' && !motherOptions.some(o => o.value === mu.id)) {
-                motherOptions = [...motherOptions, toOption(mu as User)]
-            }
-        }
-    }
-
-    // Ensure currently selected parent respects gender constraint
-    useEffect(() => {
-        if (fatherId !== null) {
-            const u = allUsers.find(x => x.id === fatherId)
-            if (!u || (u as any).gender !== 'male') setFatherId(null)
-        }
-    }, [allUsers, fatherId])
-    useEffect(() => {
-        if (motherId !== null) {
-            const u = allUsers.find(x => x.id === motherId)
-            if (!u || (u as any).gender !== 'female') setMotherId(null)
-        }
-    }, [allUsers, motherId])
-
     const previewUrl = imageFile ? URL.createObjectURL(imageFile) : (form.image_url ? (form.image_url.startsWith('http') ? form.image_url : form.image_url) : null)
 
     return (
@@ -546,11 +393,11 @@ export default function UserForm({
             <div className="card-header bg-light bg-gradient border-bottom py-3 px-4">
                 <div className="d-flex align-items-center">
                     <div className="bg-primary bg-opacity-10 text-primary rounded-circle p-2 me-3 d-flex align-items-center justify-content-center" style={{ width: '48px', height: '48px' }}>
-                        <i className={`bi ${mode === 'create' ? 'bi-person-plus-fill' : 'bi-pencil-fill'} fs-4`}></i>
+                        <i className={`bi bi-person-plus-fill fs-4`}></i>
                     </div>
                     <div>
-                        <h5 className="card-title fw-bold text-dark mb-0">{mode === 'create' ? t('userForm.title.create') : t('userForm.title.edit')}</h5>
-                        <p className="text-muted small mb-0">{mode === 'create' ? t('userForm.subtitle.create') : t('userForm.subtitle.edit')}</p>
+                        <h5 className="card-title fw-bold text-dark mb-0">{t('userForm.title.create')}</h5>
+                        <p className="text-muted small mb-0">{t('userForm.subtitle.create')}</p>
                     </div>
                 </div>
             </div>
@@ -564,7 +411,6 @@ export default function UserForm({
                 )}
 
                 <div className="row g-4">
-                    {/* Colonne Gauche : Photo & Info principales */}
                     <div className="col-lg-4">
                         <div className="text-center mb-4">
                             <div className="position-relative d-inline-block mb-3">
@@ -586,7 +432,6 @@ export default function UserForm({
                             <h6 className="text-secondary small fw-bold">{t('userForm.labels.profilePhoto')}</h6>
                         </div>
 
-                        {/* Switchs Activé / Première connexion */}
                         <div className="card bg-light border-0 rounded-3 p-3 mb-3">
                             <div className="form-check form-switch mb-2">
                                 <input
@@ -620,9 +465,7 @@ export default function UserForm({
                         </div>
                     </div>
 
-                    {/* Colonne Droite : Formulaire détaillé */}
                     <div className="col-lg-8">
-                        {/* Section : Identité */}
                         <div className="mb-4">
                             <h6 className="text-uppercase text-secondary fw-bold fs-7 mb-3 border-bottom pb-2 d-flex justify-content-between align-items-center">
                                 <span><i className="bi bi-person-badge me-2 text-primary"></i>{t('userForm.sections.personalInfo')}</span>
@@ -679,7 +522,6 @@ export default function UserForm({
                             </div>
                         </div>
 
-                        {/* Section : Contact */}
                         <div className="mb-4">
                             <h6 className="text-uppercase text-secondary fw-bold fs-7 mb-3 border-bottom pb-2">
                                 <i className="bi bi-envelope-at me-2 text-primary"></i>{t('userForm.sections.contact')}
@@ -710,7 +552,6 @@ export default function UserForm({
                             </div>
                         </div>
 
-                        {/* Section : Compte & Login */}
                         <div className="mb-4">
                             <h6 className="text-uppercase text-secondary fw-bold fs-7 mb-3 border-bottom pb-2">
                                 <i className="bi bi-shield-lock me-2 text-primary"></i>{t('userForm.sections.login')}
@@ -736,7 +577,6 @@ export default function UserForm({
                             </div>
                         </div>
 
-                        {/* Section : Famille */}
                         <div className="mb-4">
                             <h6 className="text-uppercase text-secondary fw-bold fs-7 mb-3 border-bottom pb-2">
                                 <i className="bi bi-people me-2 text-primary"></i>{t('userForm.sections.family')}
@@ -769,7 +609,6 @@ export default function UserForm({
                             </div>
                         </div>
 
-                        {/* Section : Rôles */}
                         <div className="mb-4">
                             <div className="d-flex align-items-center justify-content-between mb-3 border-bottom pb-2">
                                 <h6 className="text-uppercase text-secondary fw-bold fs-7 mb-0">
@@ -837,7 +676,6 @@ export default function UserForm({
                     )}
                 </button>
             </div>
-            {/* Modal supprimé: création de parents désactivée */}
         </div>
 
     )

@@ -19,6 +19,7 @@ import CreateAdmin from './components/pages/CreateAdmin'
 import './i18n'
 import { LanguageProvider } from './contexts/LanguageContext'
 import HomeUser from './components/user/HomeUser'
+import Tree from './components/familytree/Tree'
 
 function App() {
   return (
@@ -29,6 +30,14 @@ function App() {
         <main className="flex-grow-1 overflow-auto">
           <Routes>
             <Route path="/" element={<Home />} />
+            <Route 
+              path="/tree" 
+              element={
+                <ProtectedRoute>
+                  <Tree />
+                </ProtectedRoute>
+              } 
+            />
             <Route path="/auth" element={<Login />} />
             <Route path="/change-password" element={<ChangePasswordFirstLogin />} />
             <Route path="/logout" element={<Logout />} />

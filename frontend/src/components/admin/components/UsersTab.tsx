@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { getUsers, type User } from '../../../services/users'
 import AdminActions from './AdminActions'
-import UserForm from './UserForm'
+import AddUserForm from './AddUserForm'
+import EditUserForm from './EditUserForm'
 import UsersTable from './UsersTable'
 import Modal from '../../common/Modal'
 import { useTranslation } from 'react-i18next'
@@ -126,13 +127,23 @@ export default function UsersTab({
                 size="lg"
             >
                 {isEditing && (
-                    <UserForm
-                        mode={editingId === 0 ? 'create' : 'edit'}
-                        initial={currentUser ?? undefined}
-                        onSaved={onSaved}
-                        onCancel={cancelEdit}
-                        allowedRoleNames={userFormOptions?.allowedRoleNames}
-                    />
+                    editingId === 0 ? (
+                        <AddUserForm
+                            initial={currentUser ?? undefined}
+                            onSaved={onSaved}
+                            onCancel={cancelEdit}
+                            allowedRoleNames={userFormOptions?.allowedRoleNames}
+                        />
+                    ) : (
+                        currentUser ? (
+                            <EditUserForm
+                                initial={currentUser}
+                                onSaved={onSaved}
+                                onCancel={cancelEdit}
+                                allowedRoleNames={userFormOptions?.allowedRoleNames}
+                            />
+                        ) : null
+                    )
                 )}
             </Modal>
 

@@ -3,6 +3,7 @@ from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt, ExpiredSignatureError
 from typing import Optional
 import logging
+import asyncio
 from settings import settings
 from database import get_db_connection
 
@@ -10,26 +11,63 @@ logger = logging.getLogger("auth")
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login", auto_error=False)
 
-def get_cursor():
+
+class AsyncCursor:
+    """Async wrapper around mysql-connector cursor and connection using threadpool.
+    Provides awaitable execute/fetch methods and commit/close helpers.
+    """
+    def __init__(self, conn):
+        # dictionary=True for convenient dict rows across the app
+        self._conn = conn
+        self._cursor = conn.cursor(dictionary=True)
+
+    async def execute(self, sql: str, params: Optional[tuple] = None):
+        return await asyncio.to_thread(self._cursor.execute, sql, params)
+
+    async def fetchone(self):
+        return await asyncio.to_thread(self._cursor.fetchone)
+
+    async def fetchall(self):
+        return await asyncio.to_thread(self._cursor.fetchall)
+
+    @property
+    def rowcount(self) -> int:
+        return getattr(self._cursor, "rowcount", 0)
+
+    @property
+    def lastrowid(self):
+        return getattr(self._cursor, "lastrowid", None)
+
+    async def commit(self):
+        return await asyncio.to_thread(self._conn.commit)
+
+    async def rollback(self):
+        return await asyncio.to_thread(self._conn.rollback)
+
+    async def close(self):
+        # Close cursor then connection, both in threadpool
+        try:
+            await asyncio.to_thread(self._cursor.close)
+        finally:
+            try:
+                await asyncio.to_thread(self._conn.close)
+            except Exception as e:
+                logger.warning(f"[auth] Failed to close DB connection: {e}")
+
+async def get_cursor():
+    """Async dependency returning an AsyncCursor. Ensures liveness and cleanup."""
     conn = get_db_connection()
     # Ensure the connection is alive; reconnect if needed
     try:
         conn.ping(reconnect=True, attempts=3, delay=1)
     except Exception as e:
-        # If ping fails, force a fresh connection
         logger.warning(f"[auth] DB ping failed, getting fresh connection: {e}")
         conn = get_db_connection()
-    cursor = conn.cursor(dictionary=True)
+    async_cursor = AsyncCursor(conn)
     try:
-        yield cursor
+        yield async_cursor
     finally:
-        try:
-            cursor.close()
-        finally:
-            try:
-                conn.close()
-            except Exception as e:
-                logger.warning(f"[auth] Failed to close DB connection: {e}")
+        await async_cursor.close()
 
 
 def ensure_revoked_tokens_table(cursor):
@@ -50,7 +88,7 @@ def ensure_revoked_tokens_table(cursor):
         logger.exception("[auth] Failed to ensure revoked_tokens table exists")
 
 
-def get_current_user(request: Request, token: Optional[str] = Depends(oauth2_scheme), cursor = Depends(get_cursor)):
+async def get_current_user(request: Request, token: Optional[str] = Depends(oauth2_scheme), cursor = Depends(get_cursor)):
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
@@ -82,11 +120,12 @@ def get_current_user(request: Request, token: Optional[str] = Depends(oauth2_sch
         # Note: We assume the table `revoked_tokens` exists. 
         # Ideally, use a caching layer (Redis) for revocation lists in high-scale prod.
         if jti:
-            # Ensure table exists to avoid 500 on first verify
-            ensure_revoked_tokens_table(cursor)
+            # Ensure table exists to avoid 500 on first verify (sync helper)
+            # Note: lifespan ensures it as well.
+            # For async cursor, run the check using await.
             try:
-                cursor.execute("SELECT id FROM revoked_tokens WHERE jti = %s", (jti,))
-                if cursor.fetchone():
+                await cursor.execute("SELECT id FROM revoked_tokens WHERE jti = %s", (jti,))
+                if await cursor.fetchone():
                     logger.info(f"[auth] Token revoked (jti matched) for user_id={user_id}")
                     raise credentials_exception
             except Exception as e:
@@ -100,8 +139,8 @@ def get_current_user(request: Request, token: Optional[str] = Depends(oauth2_sch
         raise credentials_exception
 
     # Fetch user
-    cursor.execute("SELECT * FROM users WHERE id = %s", (user_id,))
-    user = cursor.fetchone()
+    await cursor.execute("SELECT * FROM users WHERE id = %s", (user_id,))
+    user = await cursor.fetchone()
     
     if not user:
         raise credentials_exception
@@ -109,9 +148,9 @@ def get_current_user(request: Request, token: Optional[str] = Depends(oauth2_sch
     return user
 
 
-def get_user_roles(cursor, user_id: int):
+async def get_user_roles(cursor, user_id: int):
     try:
-        cursor.execute(
+        await cursor.execute(
             """
             SELECT r.role
             FROM role_attribution ra
@@ -120,14 +159,14 @@ def get_user_roles(cursor, user_id: int):
             """,
             (user_id,),
         )
-        rows = cursor.fetchall() or []
+        rows = await cursor.fetchall() or []
         return [str(r.get("role")).lower() for r in rows if r and r.get("role") is not None]
     except Exception:
         logger.exception("[auth] Failed to fetch user roles")
         return []
 
 
-def has_role(cursor, user_id: int, role_name: str) -> bool:
-    roles = get_user_roles(cursor, user_id)
+async def has_role(cursor, user_id: int, role_name: str) -> bool:
+    roles = await get_user_roles(cursor, user_id)
     return role_name.lower() in roles
 

@@ -237,7 +237,7 @@ function UserCard({ user, isViewerAdmin, imageBustToken, onEdit, onDelete, onHar
                             <i className="bi bi-trash me-1"></i>{t('users.card.delete')}
                         </button>
                     ) : null)}
-                    
+
                     <button className="btn btn-sm btn-outline-secondary w-100" onClick={toggleParents}>
                         <i className={`bi ${showParents ? 'bi-eye-slash' : 'bi-people'} me-1`}></i>
                         {showParents ? t('users.card.hideParents') : t('users.card.showParents')}
@@ -347,16 +347,22 @@ export default function UsersTable({
             return typeof rawActive !== 'undefined' ? (Number(rawActive) === 1 || rawActive === true) : true
         }
         return [...users].sort((a, b) => {
+            // Primary sort: active users first
             const aActive = getIsActive(a)
             const bActive = getIsActive(b)
             if (aActive !== bActive) return aActive ? -1 : 1
-            // Secondary sort: lastname then firstname then id
-            const aLast = (a.lastname || '').toLowerCase()
-            const bLast = (b.lastname || '').toLowerCase()
-            if (aLast !== bLast) return aLast.localeCompare(bLast)
+
+            // Secondary sort: firstname then lastname
             const aFirst = (a.firstname || '').toLowerCase()
             const bFirst = (b.firstname || '').toLowerCase()
             if (aFirst !== bFirst) return aFirst.localeCompare(bFirst)
+            
+            // Tertiary sort: lastname then id
+            const aLast = (a.lastname || '').toLowerCase()
+            const bLast = (b.lastname || '').toLowerCase()
+            if (aLast !== bLast) return aLast.localeCompare(bLast)
+            
+            // Final sort: by id
             return a.id - b.id
         })
     }, [users])
@@ -411,7 +417,10 @@ export default function UsersTable({
                 {sortedUsers.map(u => (
                     <UserCard
                         key={u.id}
-                        user={u}                        isViewerAdmin={isViewerAdmin}                        imageBustToken={imageBustToken}                        onEdit={onEdit}
+                        user={u}
+                        isViewerAdmin={isViewerAdmin}
+                        imageBustToken={imageBustToken}
+                        onEdit={onEdit}
                         onDelete={onDelete}
                         onHardDelete={onHardDelete}
                     />

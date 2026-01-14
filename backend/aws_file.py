@@ -7,6 +7,28 @@ import logging
 logger = logging.getLogger("aws")
 
 class AwsFile:
+    def delete_image(self, url: Optional[str]) -> bool:
+        """Delete an image from S3 using its URL."""
+        if not url:
+            return False
+        # Extract key from URL
+        base_url = self.settings.aws_s3_public_base.rstrip('/') if self.settings.aws_s3_public_base else None
+        if base_url and url.startswith(base_url):
+            key = url[len(base_url):].lstrip('/')
+        else:
+            # fallback for default AWS url
+            parts = url.split(f".amazonaws.com/")
+            key = parts[1] if len(parts) == 2 else None
+        if not key:
+            logger.warning(f"[aws] Unable to extract key from url: {url}")
+            return False
+        try:
+            self._client.delete_object(Bucket=self.settings.aws_s3_bucket, Key=key)
+            logger.info(f"[aws] Deleted image: {key}")
+            return True
+        except Exception as e:
+            logger.exception(f"[aws] Failed to delete image: {key}")
+            return False
     def __init__(self, settings):
         self.settings = settings
         if not self.settings.aws_s3_bucket or not self.settings.aws_region:

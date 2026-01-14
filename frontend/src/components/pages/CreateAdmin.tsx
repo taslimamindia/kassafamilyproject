@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom'
-import UserForm from '../admin/components/UserForm'
+import AddUserForm from '../admin/components/AddUserForm'
 import type { User } from '../../services/users'
 import { assignRoleToUser } from '../../services/roleAttributions'
 import { toast } from 'react-toastify'
@@ -36,7 +36,7 @@ export default function CreateAdmin() {
         <div className="container py-4">
             <h2 className="mb-3">{t('createAdmin.title')}</h2>
             <p className="text-muted">{t('createAdmin.info')}</p>
-            <UserForm mode="create" onSaved={handleSaved} onCancel={() => navigate('/profil')} />
+            <AddUserForm onSaved={handleSaved} onCancel={() => navigate('/profil')} />
         </div>
     )
 }
