@@ -8,6 +8,7 @@ import logging
 from models import TokenResponse
 from auth_utils import verify_password, create_access_token, hash_password
 from settings import settings
+import asyncio
 
 router = APIRouter()
 logger = logging.getLogger("auth")
@@ -41,7 +42,7 @@ async def login(request: Request, cursor = Depends(get_cursor)):
     if not identifier or not password:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Missing identifier or password")
 
-    cursor.execute(
+    await cursor.execute(
         """
         SELECT * FROM users
         WHERE username = %s OR email = %s OR telephone = %s
@@ -49,7 +50,7 @@ async def login(request: Request, cursor = Depends(get_cursor)):
         """,
         (identifier, identifier, identifier),
     )
-    user = cursor.fetchone()
+    user = await cursor.fetchone()
     if not user:
         logging.error(f"[auth] Login failed for identifier: {identifier} (user not found)")
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Informations de connexion incorrectes")
@@ -69,7 +70,7 @@ async def login(request: Request, cursor = Depends(get_cursor)):
 
     # Block users with role 'norole' except the special username 'norole'
     username = user.get("username") or ""
-    if has_role(cursor, user["id"], "norole") and username.lower() != "norole":
+    if await has_role(cursor, user["id"], "norole") and username.lower() != "norole":
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Informations de connexion incorrectes")
 
     # Require password change on first login
@@ -109,7 +110,7 @@ async def change_password_first_login(request: Request, cursor = Depends(get_cur
     if not identifier or not old_password or not new_password:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Missing fields")
 
-    cursor.execute(
+    await cursor.execute(
         """
         SELECT * FROM users
         WHERE username = %s OR email = %s OR telephone = %s
@@ -117,7 +118,7 @@ async def change_password_first_login(request: Request, cursor = Depends(get_cur
         """,
         (identifier, identifier, identifier),
     )
-    user = cursor.fetchone()
+    user = await cursor.fetchone()
     # For security, do not reveal whether the user exists; use generic errors
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Informations de connexion incorrectes")
@@ -147,12 +148,12 @@ async def change_password_first_login(request: Request, cursor = Depends(get_cur
 
     # Update password and clear first-login flag
     new_hashed = hash_password(new_password)
-    cursor.execute(
+    await cursor.execute(
         "UPDATE users SET password = %s, isfirstlogin = %s, updatedat = CURRENT_TIMESTAMP WHERE id = %s",
         (new_hashed, 0, user["id"]),
     )
     try:
-        getattr(cursor, "_connection").commit()
+        await cursor.commit()
     except Exception:
         logger.exception("[auth] Commit failed during change_password_first_login")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Database commit failed")
@@ -160,13 +161,13 @@ async def change_password_first_login(request: Request, cursor = Depends(get_cur
     return {"status": "ok"}
 
 @router.get("/verify")
-def verify_auth(current_user: dict = Depends(get_current_user)):
+async def verify_auth(current_user: dict = Depends(get_current_user)):
     user = dict(current_user) if isinstance(current_user, dict) else current_user
     user.pop("password", None)
     return {"ok": True, "user": user}
 
 @router.post("/logout")
-def logout(request: Request, token: Optional[str] = Depends(oauth2_scheme), cursor = Depends(get_cursor)):
+async def logout(request: Request, token: Optional[str] = Depends(oauth2_scheme), cursor = Depends(get_cursor)):
     if not token:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
     try:
@@ -176,7 +177,7 @@ def logout(request: Request, token: Optional[str] = Depends(oauth2_scheme), curs
         expires_dt = datetime.fromtimestamp(exp, tz=timezone.utc) if exp else datetime.now(timezone.utc)
 
         # Ideally, schemas are created at startup or migration, not here.
-        cursor.execute(
+        await cursor.execute(
             """
             CREATE TABLE IF NOT EXISTS revoked_tokens (
                 id INT AUTO_INCREMENT PRIMARY KEY,
@@ -187,14 +188,14 @@ def logout(request: Request, token: Optional[str] = Depends(oauth2_scheme), curs
             ) ENGINE=InnoDB;
             """
         )
-        cursor.execute(
+        await cursor.execute(
             "INSERT INTO revoked_tokens (jti, token, expires) VALUES (%s, %s, %s)",
             (jti, token if not jti else None, expires_dt.replace(tzinfo=None)),
         )
         
         # Auto-commit dependent
         try:
-            getattr(cursor, "_connection").commit()
+            await cursor.commit()
         except Exception:
             logger.exception("[auth] Commit failed during logout")
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Database commit failed")

@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status, WebSocket, WebSocketDisconnect
 import logging
-from dependencies import get_db_connection, get_cursor, get_current_user
+from dependencies import get_db_connection, get_cursor, get_current_user, AsyncCursor
 from settings import settings
 from auth_utils import hash_password
 from jose import jwt, JWTError, ExpiredSignatureError
@@ -12,24 +12,17 @@ router = APIRouter()
 logger = logging.getLogger("system")
 
 @router.get("/info-base")
-def check_db(current_user: dict = Depends(get_current_user)):
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    try:
-        cursor.execute("SELECT DATABASE();")
-        db_name = cursor.fetchone()[0]
-        # On Lightsail or Local, we now treat connection as 'local' (host-wise)
-        # but we can distinguish based on env name
-        db_type = "production" if settings.env == "production" else "development"
-        return {
-            "env": settings.env,
-            "db": db_name,
-            "status": "Connected",
-            "db_type": db_type,
-        }
-    finally:
-        cursor.close()
-        conn.close()
+async def check_db(cursor = Depends(get_cursor), current_user: dict = Depends(get_current_user)):
+    await cursor.execute("SELECT DATABASE();")
+    row = await cursor.fetchone()
+    db_name = (row or {}).get("DATABASE()") if isinstance(row, dict) else (row[0] if row else None)
+    db_type = "production" if settings.env == "production" else "development"
+    return {
+        "env": settings.env,
+        "db": db_name,
+        "status": "Connected",
+        "db_type": db_type,
+    }
 
 
 @router.websocket("/ws/memory")
@@ -46,7 +39,7 @@ async def memory_ws(websocket: WebSocket):
 
     # Validate token and ensure admin role
     conn = None
-    cursor = None
+    acursor: AsyncCursor | None = None
     try:
         payload = jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
         user_id_raw = payload.get("sub")
@@ -60,15 +53,15 @@ async def memory_ws(websocket: WebSocket):
             return
 
         conn = get_db_connection()
-        cursor = conn.cursor(dictionary=True)
+        acursor = AsyncCursor(conn)
 
         if jti:
-            cursor.execute("SELECT id FROM revoked_tokens WHERE jti = %s", (jti,))
-            if cursor.fetchone():
+            await acursor.execute("SELECT id FROM revoked_tokens WHERE jti = %s", (jti,))
+            if await acursor.fetchone():
                 await websocket.close(code=4401)
                 return
 
-        cursor.execute(
+        await acursor.execute(
             """
             SELECT r.role
             FROM role_attribution ra
@@ -77,7 +70,7 @@ async def memory_ws(websocket: WebSocket):
             """,
             (user_id,),
         )
-        rows = cursor.fetchall() or []
+        rows = await acursor.fetchall() or []
         roles = [str(r.get("role")).lower() for r in rows if r and r.get("role") is not None]
         if "admin" not in roles:
             await websocket.close(code=4403)  # Forbidden
@@ -97,14 +90,12 @@ async def memory_ws(websocket: WebSocket):
         return
     finally:
         try:
-            if cursor:
-                cursor.close()
-        finally:
-            try:
-                if conn:
-                    conn.close()
-            except Exception:
-                pass
+            if acursor:
+                await acursor.close()
+            elif conn:
+                conn.close()
+        except Exception:
+            pass
 
     await websocket.accept()
 
@@ -185,17 +176,22 @@ async def memory_ws(websocket: WebSocket):
             pass
 
 @router.get("/setup-database")
-def setup_database(current_user: dict = Depends(get_current_user)):
-    conn = get_db_connection(autocommit=False)
-    cursor = conn.cursor()
+async def setup_database(cursor = Depends(get_cursor), current_user: dict = Depends(get_current_user)):
     try:
+        # Ensure transactional behavior
+        try:
+            # Disable autocommit for this transactional route
+            cursor._conn.autocommit = False
+        except Exception:
+            pass
+
         # Insert father (ID 1)
         sql_father = (
             "INSERT INTO users (id, firstname, lastname, username, password, isfirstlogin) "
             "VALUES (1, %s, %s, %s, %s, %s) "
             "ON DUPLICATE KEY UPDATE id=id"
         )
-        cursor.execute(
+        await cursor.execute(
             sql_father,
             (
                 "Kassa",
@@ -212,7 +208,7 @@ def setup_database(current_user: dict = Depends(get_current_user)):
             "VALUES (2, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
             "ON DUPLICATE KEY UPDATE id=id"
         )
-        cursor.execute(
+        await cursor.execute(
             sql_admin,
             (
                 "admin",
@@ -251,26 +247,27 @@ def setup_database(current_user: dict = Depends(get_current_user)):
             "INSERT INTO users (id, firstname, lastname, username, password, id_father, isfirstlogin) "
             "VALUES (%s, %s, %s, %s, %s, %s, %s) ON DUPLICATE KEY UPDATE id=id"
         )
-        cursor.executemany(sql_child, children)
+        # executemany is blocking; run in threadpool
+        await asyncio.to_thread(cursor._cursor.executemany, sql_child, children)
 
         # Roles
-        cursor.execute(
+        await cursor.execute(
             "INSERT INTO roles (id, role) VALUES (1, 'admin') "
             "ON DUPLICATE KEY UPDATE role='admin'"
         )
-        cursor.execute(
+        await cursor.execute(
             "INSERT INTO roles (id, role) VALUES (2, 'user') "
             "ON DUPLICATE KEY UPDATE role='user'"
         )
-        cursor.execute(
+        await cursor.execute(
             "INSERT INTO roles (id, role) VALUES (3, 'guest') "
             "ON DUPLICATE KEY UPDATE role='guest'"
         )
-        cursor.execute(
+        await cursor.execute(
             "INSERT INTO roles (id, role) VALUES (4, 'norole') "
             "ON DUPLICATE KEY UPDATE role='norole'"
         )
-        cursor.execute(
+        await cursor.execute(
             "INSERT INTO roles (id, role) VALUES (5, 'admingroup') "
             "ON DUPLICATE KEY UPDATE role='admingroup'"
         )
@@ -281,7 +278,7 @@ def setup_database(current_user: dict = Depends(get_current_user)):
             "INSERT INTO users (id, firstname, lastname, username, password, isfirstlogin) "
             "VALUES (%s, %s, %s, %s, %s, %s) ON DUPLICATE KEY UPDATE id=id"
         )
-        cursor.execute(
+        await cursor.execute(
             sql_role_user,
             (
                 5,
@@ -293,7 +290,7 @@ def setup_database(current_user: dict = Depends(get_current_user)):
             ),
         )
         # Norole user (ID 6)
-        cursor.execute(
+        await cursor.execute(
             sql_role_user,
             (
                 6,
@@ -308,36 +305,41 @@ def setup_database(current_user: dict = Depends(get_current_user)):
         # Role assignments
         # Admin gets everything
         for rid in (1, 2, 3):
-            cursor.execute(
+            await cursor.execute(
                 "INSERT IGNORE INTO role_attribution (users_id, roles_id) VALUES (2, %s)",
                 (rid,),
             )
 
         # No user add norole for kassa, father and mother
         for uid in (1, 3, 4):
-            cursor.execute(
+            await cursor.execute(
                 "INSERT IGNORE INTO role_attribution (users_id, roles_id) VALUES (%s, 4)",
                 (uid,),
             )
 
         # Guest gets guest role
-        cursor.execute(
+        await cursor.execute(
             "INSERT IGNORE INTO role_attribution (users_id, roles_id) VALUES (5, 3)"
         )
 
         # Norole gets norole role
-        cursor.execute(
+        await cursor.execute(
             "INSERT IGNORE INTO role_attribution (users_id, roles_id) VALUES (6, 4)"
         )
 
-        conn.commit()
+        await cursor.commit()
 
         return {"status": "Success", "message": "Ensure initial data exists"}
     
     except Exception as e:
-        conn.rollback()
+        try:
+            await cursor.rollback()
+        except Exception:
+            pass
         logger.exception("[system] setup_database failed")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
     finally:
-        cursor.close()
-        conn.close()
+        try:
+            await cursor.close()
+        except Exception:
+            pass

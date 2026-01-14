@@ -9,61 +9,61 @@ router = APIRouter()
 logger = logging.getLogger("roles")
 
 @router.get("/roles")
-def list_roles(cursor = Depends(get_cursor), current_user: dict = Depends(get_current_user)):
-    cursor.execute("SELECT * FROM roles ORDER BY id")
-    return cursor.fetchall()
+async def list_roles(cursor = Depends(get_cursor), current_user: dict = Depends(get_current_user)):
+    await cursor.execute("SELECT * FROM roles ORDER BY id")
+    return await cursor.fetchall()
 
 @router.get("/roles/{role_id}")
-def get_role(role_id: int, cursor = Depends(get_cursor), current_user: dict = Depends(get_current_user)):
-    cursor.execute("SELECT * FROM roles WHERE id = %s", (role_id,))
-    role = cursor.fetchone()
+async def get_role(role_id: int, cursor = Depends(get_cursor), current_user: dict = Depends(get_current_user)):
+    await cursor.execute("SELECT * FROM roles WHERE id = %s", (role_id,))
+    role = await cursor.fetchone()
     if not role:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Role not found")
     return role
 
 @router.post("/roles")
-def create_role(body: Role, cursor = Depends(get_cursor), current_user: dict = Depends(get_current_user)):
-    if not has_role(cursor, current_user["id"], "admin"):
+async def create_role(body: Role, cursor = Depends(get_cursor), current_user: dict = Depends(get_current_user)):
+    if not await has_role(cursor, current_user["id"], "admin"):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only admin can create roles")
     if body.id is None:
-        cursor.execute("SELECT COALESCE(MAX(id), 0) + 1 AS next_id FROM roles")
-        next_id = cursor.fetchone()["next_id"]
+        await cursor.execute("SELECT COALESCE(MAX(id), 0) + 1 AS next_id FROM roles")
+        next_id = (await cursor.fetchone())["next_id"]
         body.id = int(next_id)
-    cursor.execute("INSERT INTO roles (id, role) VALUES (%s, %s)", (body.id, body.role))
+    await cursor.execute("INSERT INTO roles (id, role) VALUES (%s, %s)", (body.id, body.role))
     try:
-        getattr(cursor, "_connection").commit()
+        await cursor.commit()
     except Exception:
         logger.exception("[roles] Commit failed during create_role")
         from fastapi import HTTPException, status
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Database commit failed")
-    cursor.execute("SELECT * FROM roles WHERE id = %s", (body.id,))
-    return cursor.fetchone()
+    await cursor.execute("SELECT * FROM roles WHERE id = %s", (body.id,))
+    return await cursor.fetchone()
 
 @router.patch("/roles/{role_id}")
-def update_role(role_id: int, body: Role, cursor = Depends(get_cursor), current_user: dict = Depends(get_current_user)):
-    if not has_role(cursor, current_user["id"], "admin"):
+async def update_role(role_id: int, body: Role, cursor = Depends(get_cursor), current_user: dict = Depends(get_current_user)):
+    if not await has_role(cursor, current_user["id"], "admin"):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only admin can update roles")
-    cursor.execute("UPDATE roles SET role = %s WHERE id = %s", (body.role, role_id))
+    await cursor.execute("UPDATE roles SET role = %s WHERE id = %s", (body.role, role_id))
     try:
-        getattr(cursor, "_connection").commit()
+        await cursor.commit()
     except Exception:
         logger.exception("[roles] Commit failed during update_role")
         from fastapi import HTTPException, status
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Database commit failed")
-    cursor.execute("SELECT * FROM roles WHERE id = %s", (role_id,))
-    role = cursor.fetchone()
+    await cursor.execute("SELECT * FROM roles WHERE id = %s", (role_id,))
+    role = await cursor.fetchone()
     if not role:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Role not found")
     return role
 
 @router.delete("/roles/{role_id}")
-def delete_role(role_id: int, cursor = Depends(get_cursor), current_user: dict = Depends(get_current_user)):
-    if not has_role(cursor, current_user["id"], "admin"):
+async def delete_role(role_id: int, cursor = Depends(get_cursor), current_user: dict = Depends(get_current_user)):
+    if not await has_role(cursor, current_user["id"], "admin"):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only admin can delete roles")
-    cursor.execute("DELETE FROM role_attribution WHERE roles_id = %s", (role_id,))
-    cursor.execute("DELETE FROM roles WHERE id = %s", (role_id,))
+    await cursor.execute("DELETE FROM role_attribution WHERE roles_id = %s", (role_id,))
+    await cursor.execute("DELETE FROM roles WHERE id = %s", (role_id,))
     try:
-        getattr(cursor, "_connection").commit()
+        await cursor.commit()
     except Exception:
         logger.exception("[roles] Commit failed during delete_role")
         from fastapi import HTTPException, status
@@ -71,7 +71,7 @@ def delete_role(role_id: int, cursor = Depends(get_cursor), current_user: dict =
     return {"status": "deleted", "id": role_id}
 
 @router.get("/role-attributions")
-def list_role_attributions(request: Request, cursor = Depends(get_cursor), current_user: dict = Depends(get_current_user)):
+async def list_role_attributions(request: Request, cursor = Depends(get_cursor), current_user: dict = Depends(get_current_user)):
     # Optional filter: status (active/inactive/all) — defaults to active
     qp = request.query_params
     status = (qp.get("status") or "active").lower()
@@ -80,7 +80,7 @@ def list_role_attributions(request: Request, cursor = Depends(get_cursor), curre
     if status in {"active", "inactive"}:
         where = "WHERE u.isactive = %s"
         vals.append(1 if status == "active" else 0)
-    cursor.execute(
+    await cursor.execute(
         f"""
         SELECT ra.id, ra.users_id, ra.roles_id,
             u.username, u.firstname, u.lastname, u.image_url,
@@ -93,11 +93,11 @@ def list_role_attributions(request: Request, cursor = Depends(get_cursor), curre
         """,
         tuple(vals)
     )
-    return cursor.fetchall()
+    return await cursor.fetchall()
 
 @router.get("/users/{user_id}/roles")
-def list_roles_for_user(user_id: int, cursor = Depends(get_cursor), current_user: dict = Depends(get_current_user)):
-    cursor.execute(
+async def list_roles_for_user(user_id: int, cursor = Depends(get_cursor), current_user: dict = Depends(get_current_user)):
+    await cursor.execute(
         """
         SELECT r.id, r.role
         FROM role_attribution ra
@@ -107,17 +107,17 @@ def list_roles_for_user(user_id: int, cursor = Depends(get_cursor), current_user
         """,
         (user_id,)
     )
-    return cursor.fetchall()
+    return await cursor.fetchall()
 
 @router.post("/role-attributions")
-def assign_role(body: RoleAttributionCreate, cursor = Depends(get_cursor), current_user: dict = Depends(get_current_user)):
-    is_admin = has_role(cursor, current_user["id"], "admin")
-    is_group_admin = has_role(cursor, current_user["id"], "admingroup")
-    cursor.execute("SELECT id FROM users WHERE id = %s", (body.users_id,))
-    if not cursor.fetchone():
+async def assign_role(body: RoleAttributionCreate, cursor = Depends(get_cursor), current_user: dict = Depends(get_current_user)):
+    is_admin = await has_role(cursor, current_user["id"], "admin")
+    is_group_admin = await has_role(cursor, current_user["id"], "admingroup")
+    await cursor.execute("SELECT id FROM users WHERE id = %s", (body.users_id,))
+    if not await cursor.fetchone():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-    cursor.execute("SELECT id, role FROM roles WHERE id = %s", (body.roles_id,))
-    role_row = cursor.fetchone()
+    await cursor.execute("SELECT id, role FROM roles WHERE id = %s", (body.roles_id,))
+    role_row = await cursor.fetchone()
     if not role_row:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Role not found")
     role_name = str(role_row.get("role")).lower()
@@ -128,8 +128,8 @@ def assign_role(body: RoleAttributionCreate, cursor = Depends(get_cursor), curre
             if role_name not in {"admingroup", "user"}:
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Role not allowed for group admin")
             # Check target user is in same group
-            cursor.execute("SELECT id, id_father, id_mother FROM users WHERE id = %s", (body.users_id,))
-            target = cursor.fetchone()
+            await cursor.execute("SELECT id, id_father, id_mother FROM users WHERE id = %s", (body.users_id,))
+            target = await cursor.fetchone()
             fid = current_user.get("id_father")
             mid = current_user.get("id_mother")
             same_group = False
@@ -143,19 +143,19 @@ def assign_role(body: RoleAttributionCreate, cursor = Depends(get_cursor), curre
         else:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
 
-    cursor.execute(
+    await cursor.execute(
         "SELECT id FROM role_attribution WHERE users_id = %s AND roles_id = %s",
         (body.users_id, body.roles_id)
     )
-    if cursor.fetchone():
+    if await cursor.fetchone():
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Role already assigned to user")
     
     try:
-        cursor.execute(
+        await cursor.execute(
             "INSERT INTO role_attribution (users_id, roles_id) VALUES (%s, %s)",
             (body.users_id, body.roles_id)
         )
-        getattr(cursor, "_connection").commit()
+        await cursor.commit()
     except mysql.connector.Error as e:
         # Handle duplicate key error from DB-level unique constraint
         if getattr(e, "errno", None) == 1062:
@@ -166,15 +166,15 @@ def assign_role(body: RoleAttributionCreate, cursor = Depends(get_cursor), curre
         logger.exception("[roles] Commit failed during assign_role")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Database commit failed")
     new_id = cursor.lastrowid
-    cursor.execute("SELECT * FROM role_attribution WHERE id = %s", (new_id,))
-    return cursor.fetchone()
+    await cursor.execute("SELECT * FROM role_attribution WHERE id = %s", (new_id,))
+    return await cursor.fetchone()
 
 @router.delete("/role-attributions/{attrib_id}")
-def remove_role_attribution(attrib_id: int, cursor = Depends(get_cursor), current_user: dict = Depends(get_current_user)):
+async def remove_role_attribution(attrib_id: int, cursor = Depends(get_cursor), current_user: dict = Depends(get_current_user)):
     # If not admin, ensure attribution is for allowed roles and within group
-    if not has_role(cursor, current_user["id"], "admin"):
+    if not await has_role(cursor, current_user["id"], "admin"):
         # Fetch attribution details
-        cursor.execute(
+        await cursor.execute(
             """
             SELECT ra.id, ra.users_id, ra.roles_id, r.role, u.id_father, u.id_mother, u.id
             FROM role_attribution ra
@@ -184,7 +184,7 @@ def remove_role_attribution(attrib_id: int, cursor = Depends(get_cursor), curren
             """,
             (attrib_id,),
         )
-        row = cursor.fetchone()
+        row = await cursor.fetchone()
         if not row:
             return {"status": "deleted", "id": attrib_id}
         role_name = str(row.get("role")).lower()
@@ -199,9 +199,9 @@ def remove_role_attribution(attrib_id: int, cursor = Depends(get_cursor), curren
             same_group = True
         if not same_group and row.get("id") != current_user.get("id"):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
-    cursor.execute("DELETE FROM role_attribution WHERE id = %s", (attrib_id,))
+    await cursor.execute("DELETE FROM role_attribution WHERE id = %s", (attrib_id,))
     try:
-        getattr(cursor, "_connection").commit()
+        await cursor.commit()
     except Exception:
         logger.exception("[roles] Commit failed during remove_role_attribution")
         from fastapi import HTTPException, status
@@ -209,17 +209,17 @@ def remove_role_attribution(attrib_id: int, cursor = Depends(get_cursor), curren
     return {"status": "deleted", "id": attrib_id}
 
 @router.delete("/users/{user_id}/roles/{role_id}")
-def remove_role_from_user(user_id: int, role_id: int, cursor = Depends(get_cursor), current_user: dict = Depends(get_current_user)):
-    if not has_role(cursor, current_user["id"], "admin"):
-        cursor.execute("SELECT role FROM roles WHERE id = %s", (role_id,))
-        r = cursor.fetchone()
+async def remove_role_from_user(user_id: int, role_id: int, cursor = Depends(get_cursor), current_user: dict = Depends(get_current_user)):
+    if not await has_role(cursor, current_user["id"], "admin"):
+        await cursor.execute("SELECT role FROM roles WHERE id = %s", (role_id,))
+        r = await cursor.fetchone()
         if not r:
             return {"status": "deleted", "user_id": user_id, "role_id": role_id}
         role_name = str(r.get("role")).lower()
         if role_name not in {"admingroup", "user"}:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
-        cursor.execute("SELECT id, id_father, id_mother FROM users WHERE id = %s", (user_id,))
-        u = cursor.fetchone()
+        await cursor.execute("SELECT id, id_father, id_mother FROM users WHERE id = %s", (user_id,))
+        u = await cursor.fetchone()
         if not u:
             return {"status": "deleted", "user_id": user_id, "role_id": role_id}
         fid = current_user.get("id_father")
@@ -231,9 +231,9 @@ def remove_role_from_user(user_id: int, role_id: int, cursor = Depends(get_curso
             same_group = True
         if not same_group and u.get("id") != current_user.get("id"):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
-    cursor.execute("DELETE FROM role_attribution WHERE users_id = %s AND roles_id = %s", (user_id, role_id))
+    await cursor.execute("DELETE FROM role_attribution WHERE users_id = %s AND roles_id = %s", (user_id, role_id))
     try:
-        getattr(cursor, "_connection").commit()
+        await cursor.commit()
     except Exception:
         logger.exception("[roles] Commit failed during remove_role_from_user")
         from fastapi import HTTPException, status
