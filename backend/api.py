@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import logging
 from contextlib import asynccontextmanager
 
-from routers import auth, users, roles, system
+from routers import auth, users, roles, system, messages
 from database import get_db_connection
 from dependencies import ensure_revoked_tokens_table
 
@@ -45,3 +45,4 @@ app.include_router(auth.router, prefix="/auth", tags=["Auth"])
 app.include_router(users.router, tags=["Users"]) 
 app.include_router(roles.router, tags=["Roles"]) 
 app.include_router(system.router, tags=["System"])
+app.include_router(messages.router, tags=["Messages"])

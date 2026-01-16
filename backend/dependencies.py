@@ -24,6 +24,9 @@ class AsyncCursor:
     async def execute(self, sql: str, params: Optional[tuple] = None):
         return await asyncio.to_thread(self._cursor.execute, sql, params)
 
+    async def executemany(self, sql: str, seq_params: list):
+        return await asyncio.to_thread(self._cursor.executemany, sql, seq_params)
+
     async def fetchone(self):
         return await asyncio.to_thread(self._cursor.fetchone)
 

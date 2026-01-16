@@ -1,4 +1,5 @@
-from typing import Optional
+from typing import Optional, Union, List
+from datetime import datetime
 from pydantic import BaseModel, EmailStr, field_validator
 
 class EmptyToNoneMixin:
@@ -30,12 +31,13 @@ class UserBase(BaseModel):
     image_url: Optional[str] = None
     # 'male' | 'female'
     gender: Optional[str] = None
+    contribution_tier: Optional[str] = None
 
 class UserUpdate(UserBase):
     pass
     # Validator inherited via Mixin? No, field_validator needs to be applied to specific fields or *
     
-    @field_validator('email', 'telephone', 'birthday', 'image_url', 'gender', mode='before')
+    @field_validator('email', 'telephone', 'birthday', 'image_url', 'gender', 'contribution_tier', mode='before')
     @classmethod
     def _empty_to_none(cls, v):
         if v is None:
@@ -58,7 +60,7 @@ class UserCreate(UserBase):
     id_father: Optional[int] = None
     id_mother: Optional[int] = None
 
-    @field_validator('email', 'telephone', 'birthday', 'image_url', 'gender', mode='before')
+    @field_validator('email', 'telephone', 'birthday', 'image_url', 'gender', 'contribution_tier', mode='before')
     @classmethod
     def _empty_to_none(cls, v):
         if v is None:
@@ -78,7 +80,7 @@ class UserAdminUpdate(UserBase):
     isactive: Optional[int] = None
     isfirstlogin: Optional[int] = None
 
-    @field_validator('email', 'telephone', 'birthday', 'image_url', 'gender', mode='before')
+    @field_validator('email', 'telephone', 'birthday', 'image_url', 'gender', 'contribution_tier', mode='before')
     @classmethod
     def _empty_to_none(cls, v):
         if v is None:
@@ -92,6 +94,10 @@ class UserAdminUpdate(UserBase):
             return v
         return v
 
+class UserBulkTierUpdate(BaseModel):
+    user_ids: List[int]
+    contribution_tier: Optional[str] = None
+
 class Role(BaseModel):
     id: Optional[int] = None
     role: str
@@ -99,3 +105,23 @@ class Role(BaseModel):
 class RoleAttributionCreate(BaseModel):
     users_id: int
     roles_id: int
+
+class RoleAttributionBulkCreate(BaseModel):
+    users_ids: List[int]
+    roles_id: int
+
+class Message(BaseModel):
+    id: int
+    message: Optional[str] = None
+    message_type: Optional[str] = None
+    received_at: datetime
+    isread: int
+    sended_by_id: Optional[int] = None
+    received_by_id: Optional[int] = None
+    link: Optional[str] = None
+
+class MessageCreate(BaseModel):
+    message: str
+    recipient_type: str  # 'support', 'board', 'treasury', 'member'
+    # For members we can accept a single id or a list of ids
+    recipient_id: Optional[Union[int, List[int]]] = None
