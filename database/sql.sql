@@ -17,8 +17,6 @@ USE `database_kassa` ;
 -- -----------------------------------------------------
 -- Table `database_kassa`.`users`
 -- -----------------------------------------------------
-DROP TABLE IF EXISTS `database_kassa`.`users` ;
-
 CREATE TABLE IF NOT EXISTS `database_kassa`.`users` (
   `id` INT NOT NULL AUTO_INCREMENT,
   `firstname` VARCHAR(45) NOT NULL,
@@ -37,6 +35,8 @@ CREATE TABLE IF NOT EXISTS `database_kassa`.`users` (
   `id_father` INT NULL,
   `id_mother` INT NULL,
   `image_url` VARCHAR(255) NULL,
+  `gender` VARCHAR(45) NULL,
+  `contribution_tier` ENUM('LEVEL1', 'LEVEL2', 'LEVEL3', 'LEVEL4') NULL,
   PRIMARY KEY (`id`),
   INDEX `fk_users_users1_idx` (`createdby` ASC) VISIBLE,
   INDEX `fk_users_users2_idx` (`updatedby` ASC) VISIBLE,
@@ -68,8 +68,6 @@ ENGINE = InnoDB;
 -- -----------------------------------------------------
 -- Table `database_kassa`.`roles`
 -- -----------------------------------------------------
-DROP TABLE IF EXISTS `database_kassa`.`roles` ;
-
 CREATE TABLE IF NOT EXISTS `database_kassa`.`roles` (
   `id` INT NOT NULL,
   `role` VARCHAR(20) NULL,
@@ -80,8 +78,6 @@ ENGINE = InnoDB;
 -- -----------------------------------------------------
 -- Table `database_kassa`.`role_attribution`
 -- -----------------------------------------------------
-DROP TABLE IF EXISTS `database_kassa`.`role_attribution` ;
-
 CREATE TABLE IF NOT EXISTS `database_kassa`.`role_attribution` (
   `id` INT NOT NULL AUTO_INCREMENT,
   `users_id` INT NOT NULL,
@@ -97,6 +93,137 @@ CREATE TABLE IF NOT EXISTS `database_kassa`.`role_attribution` (
   CONSTRAINT `fk_role_attribution_roles1`
     FOREIGN KEY (`roles_id`)
     REFERENCES `database_kassa`.`roles` (`id`)
+    ON DELETE NO ACTION
+    ON UPDATE NO ACTION)
+ENGINE = InnoDB;
+
+
+-- -----------------------------------------------------
+-- Table `database_kassa`.`payment_methods`
+-- -----------------------------------------------------
+CREATE TABLE IF NOT EXISTS `database_kassa`.`payment_methods` (
+  `id` INT NOT NULL AUTO_INCREMENT,
+  `name` VARCHAR(45) NOT NULL,
+  `isactive` TINYINT NOT NULL DEFAULT 1,
+  `created_at` DATETIME NOT NULL,
+  `updated_at` DATETIME NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE INDEX `updated_at_UNIQUE` (`updated_at` ASC) VISIBLE,
+  UNIQUE INDEX `created_at_UNIQUE` (`created_at` ASC) VISIBLE,
+  UNIQUE INDEX `name_UNIQUE` (`name` ASC) VISIBLE)
+ENGINE = InnoDB;
+
+
+-- -----------------------------------------------------
+-- Table `database_kassa`.`transactions`
+-- -----------------------------------------------------
+CREATE TABLE IF NOT EXISTS `database_kassa`.`transactions` (
+  `id` INT NOT NULL AUTO_INCREMENT,
+  `amount` DECIMAL NOT NULL,
+  `status` ENUM('PENDING', 'PARTIALLY_APPROVED', 'VALIDATED', 'REJECTED') NOT NULL,
+  `proof_reference` VARCHAR(45) NOT NULL,
+  `validated_at` DATETIME NOT NULL,
+  `created_at` DATETIME NOT NULL,
+  `recorded_by_id` INT NOT NULL,
+  `users_id` INT NOT NULL,
+  `updated_by` INT NOT NULL,
+  `payment_methods_id` INT NOT NULL,
+  `transaction_type` ENUM('INCOME', 'EXPENSE') NOT NULL,
+  `category` VARCHAR(45) NOT NULL,
+  `updated_at` DATETIME NOT NULL,
+  PRIMARY KEY (`id`),
+  INDEX `fk_transactions_users1_idx` (`recorded_by_id` ASC) VISIBLE,
+  INDEX `fk_transactions_users2_idx` (`users_id` ASC) VISIBLE,
+  INDEX `fk_transactions_users3_idx` (`updated_by` ASC) VISIBLE,
+  INDEX `fk_transactions_payment_methods1_idx` (`payment_methods_id` ASC) VISIBLE,
+  CONSTRAINT `fk_transactions_users1`
+    FOREIGN KEY (`recorded_by_id`)
+    REFERENCES `database_kassa`.`users` (`id`)
+    ON DELETE NO ACTION
+    ON UPDATE NO ACTION,
+  CONSTRAINT `fk_transactions_users2`
+    FOREIGN KEY (`users_id`)
+    REFERENCES `database_kassa`.`users` (`id`)
+    ON DELETE NO ACTION
+    ON UPDATE NO ACTION,
+  CONSTRAINT `fk_transactions_users3`
+    FOREIGN KEY (`updated_by`)
+    REFERENCES `database_kassa`.`users` (`id`)
+    ON DELETE NO ACTION
+    ON UPDATE NO ACTION,
+  CONSTRAINT `fk_transactions_payment_methods1`
+    FOREIGN KEY (`payment_methods_id`)
+    REFERENCES `database_kassa`.`payment_methods` (`id`)
+    ON DELETE NO ACTION
+    ON UPDATE NO ACTION)
+ENGINE = InnoDB;
+
+
+-- -----------------------------------------------------
+-- Table `database_kassa`.`transaction_approvals`
+-- -----------------------------------------------------
+CREATE TABLE IF NOT EXISTS `database_kassa`.`transaction_approvals` (
+  `id` INT NOT NULL AUTO_INCREMENT,
+  `role_at_approval` VARCHAR(45) NULL,
+  `approved_at` DATETIME NULL,
+  `note` TEXT NULL,
+  `transactions_id` INT NOT NULL,
+  `users_id` INT NOT NULL,
+  PRIMARY KEY (`id`),
+  INDEX `fk_transaction_approvals_transactions1_idx` (`transactions_id` ASC) VISIBLE,
+  INDEX `fk_transaction_approvals_users1_idx` (`users_id` ASC) VISIBLE,
+  CONSTRAINT `fk_transaction_approvals_transactions1`
+    FOREIGN KEY (`transactions_id`)
+    REFERENCES `database_kassa`.`transactions` (`id`)
+    ON DELETE NO ACTION
+    ON UPDATE NO ACTION,
+  CONSTRAINT `fk_transaction_approvals_users1`
+    FOREIGN KEY (`users_id`)
+    REFERENCES `database_kassa`.`users` (`id`)
+    ON DELETE NO ACTION
+    ON UPDATE NO ACTION)
+ENGINE = InnoDB;
+
+
+-- -----------------------------------------------------
+-- Table `database_kassa`.`messages`
+-- -----------------------------------------------------
+CREATE TABLE IF NOT EXISTS `database_kassa`.`messages` (
+  `id` INT NOT NULL AUTO_INCREMENT,
+  `message` VARCHAR(225) NULL,
+  `message_type` ENUM('APPROVAL', 'MESSAGE', 'EXTERNE') NULL,
+  `received_at` DATETIME NOT NULL,
+  `link` VARCHAR(150) NULL,
+  PRIMARY KEY (`id`))
+ENGINE = InnoDB;
+
+
+-- -----------------------------------------------------
+-- Table `database_kassa`.`messages_recipients`
+-- -----------------------------------------------------
+CREATE TABLE IF NOT EXISTS `database_kassa`.`messages_recipients` (
+  `id` INT NOT NULL,
+  `isreaded` TINYINT NOT NULL,
+  `sender_id` INT NOT NULL,
+  `receiver_id` INT NOT NULL,
+  `messages_id` INT NOT NULL,
+  PRIMARY KEY (`id`),
+  INDEX `fk_messages_recipients_users1_idx` (`sender_id` ASC) VISIBLE,
+  INDEX `fk_messages_recipients_users2_idx` (`receiver_id` ASC) VISIBLE,
+  INDEX `fk_messages_recipients_messages1_idx` (`messages_id` ASC) VISIBLE,
+  CONSTRAINT `fk_messages_recipients_users1`
+    FOREIGN KEY (`sender_id`)
+    REFERENCES `database_kassa`.`users` (`id`)
+    ON DELETE NO ACTION
+    ON UPDATE NO ACTION,
+  CONSTRAINT `fk_messages_recipients_users2`
+    FOREIGN KEY (`receiver_id`)
+    REFERENCES `database_kassa`.`users` (`id`)
+    ON DELETE NO ACTION
+    ON UPDATE NO ACTION,
+  CONSTRAINT `fk_messages_recipients_messages1`
+    FOREIGN KEY (`messages_id`)
+    REFERENCES `database_kassa`.`messages` (`id`)
     ON DELETE NO ACTION
     ON UPDATE NO ACTION)
 ENGINE = InnoDB;
