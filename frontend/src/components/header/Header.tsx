@@ -1,12 +1,13 @@
 import './Header.css'
 import { Link, NavLink, useNavigate } from 'react-router-dom'
 import { useEffect, useState } from 'react'
-import { logout, verifyToken } from '../../services/auth'
-import { getCurrentUser } from '../../services/users'
-import { getRolesForUser } from '../../services/roleAttributions'
-import LanguageSwitcher from '../common/LanguageSwitcher'
 import { useTranslation } from 'react-i18next'
-import i18n from '../../i18n'
+import { logout, verifyToken } from '@src/services/auth'
+import { getCurrentUser } from '@src/services/users'
+import { getRolesForUser } from '@src/services/roleAttributions'
+import LanguageSwitcher from '@components/common/LanguageSwitcher'
+import Notifications from '@components/notifications/Notification'
+import i18n from '@src/i18n'
 
 // Localized dictionary for this component (decentralized)
 const headerResources = {
@@ -23,6 +24,7 @@ const headerResources = {
             admin: 'Admin',
             users: 'Utilisateurs',
             tree: 'Arbre généalogique',
+            chartes: 'Chartes',
         },
     },
     en: {
@@ -38,6 +40,7 @@ const headerResources = {
             admin: 'Admin',
             users: 'Users',
             tree: 'Family Tree',
+            chartes: 'Charter',
         },
     },
     ar: {
@@ -53,6 +56,7 @@ const headerResources = {
             admin: 'المشرف',
             users: 'المستخدمون',
             tree: 'الشجرة العائلية',
+            chartes: 'الميثاق',
         },
     },
 }
@@ -131,9 +135,9 @@ function Header() {
                 </button>
                 <div className="collapse navbar-collapse" id="mainNavbar">
                     <ul className="navbar-nav ms-lg-auto mb-2 mb-lg-0 gap-lg-2 align-items-lg-center">
-
                         {isAuth && (
                             <>
+
                                 <li className="nav-item">
                                     <NavLink to="/user" className={({ isActive }) => `nav-link d-flex align-items-center gap-2 ${isActive ? 'active' : ''}`}>
                                         <i className="bi bi-house-heart" aria-hidden="true"></i>
@@ -146,6 +150,12 @@ function Header() {
                                         {t('nav.tree')}
                                     </NavLink>
                                 </li>
+                                <li className="nav-item">
+                                    <NavLink to="/chartes" className={({ isActive }) => `nav-link d-flex align-items-center gap-2 ${isActive ? 'active' : ''}`}>
+                                        <i className="bi bi-file-earmark-text" aria-hidden="true"></i>
+                                        {t('nav.chartes')}
+                                    </NavLink>
+                                </li>
                             </>
                         )}
 
@@ -153,7 +163,7 @@ function Header() {
                             <li className="nav-item">
                                 <NavLink to="/admin" className={({ isActive }) => `nav-link d-flex align-items-center gap-2 ${isActive ? 'active' : ''}`}>
                                     <i className="bi bi-shield-lock" aria-hidden="true"></i>
-                                    Admin
+                                    {t('nav.admin')}
                                 </NavLink>
                             </li>
                         )}
@@ -211,6 +221,10 @@ function Header() {
                         <li className="nav-item d-flex align-items-center">
                             <LanguageSwitcher />
                         </li>
+                        {/* Notifications */}
+                        {isAuth && (
+                            <Notifications />
+                        )}
                     </ul>
                 </div>
             </nav>

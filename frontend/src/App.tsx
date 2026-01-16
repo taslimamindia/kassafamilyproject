@@ -20,6 +20,8 @@ import './i18n'
 import { LanguageProvider } from './contexts/LanguageContext'
 import HomeUser from './components/user/HomeUser'
 import Tree from './components/familytree/Tree'
+import HomeChartes from './components/chartes/HomeChartes'
+import FloatingChatButton from './components/notifications/FloatingChatButton'
 
 function App() {
   return (
@@ -30,6 +32,7 @@ function App() {
         <main className="flex-grow-1 overflow-auto">
           <Routes>
             <Route path="/" element={<Home />} />
+            <Route path="/chartes" element={<HomeChartes />} />
             <Route 
               path="/tree" 
               element={
@@ -88,6 +91,7 @@ function App() {
           </Routes>
         </main>
         <Footer />
+        <FloatingChatButton />
       </div>
     </LanguageProvider>
   )

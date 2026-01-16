@@ -1,6 +1,8 @@
 import { useEffect, useState, useRef } from 'react'
 import { updateUserById, type User, updateUserByIdWithImage, getUsers } from '../../../services/users'
+import { tierOptions } from '../../../constants/contributionTiers'
 import { getRoles, type Role } from '../../../services/roles'
+import { getRoleLabel } from '../../../constants/roleLabels'
 import { assignRoleToUser, getRolesForUser, removeRoleFromUser } from '../../../services/roleAttributions'
 import PhoneInput, { isValidPhoneNumber } from 'react-phone-number-input'
 import 'react-phone-number-input/style.css'
@@ -21,6 +23,7 @@ const userFormResources = {
                 birthday: { title: "Date de naissance", desc: "Sélectionnez la date de naissance (AAAA-MM-JJ). Optionnel." },
                 image: { title: "Image (optionnel)", desc: "Ajoutez une photo de profil (JPEG/PNG). Optionnel." },
                 gender: { title: "Genre", desc: "Sélectionnez le genre de l'utilisateur: Homme ou Femme." },
+                contribution_tier: { title: "Niveau de contribution", desc: "Choisissez le niveau de contribution (LEVEL1 à LEVEL4). Optionnel." },
                 isactive: { title: "Utilisateur actif", desc: "Activez pour autoriser la connexion de l'utilisateur. Désactivez pour bloquer l'accès." },
                 isfirstlogin: { title: "Première connexion", desc: "Activez si l'utilisateur doit changer son mot de passe lors de sa première connexion." },
                 father: { title: "Père", desc: "Sélectionnez le parent (père) s'il est déjà enregistré. Optionnel." },
@@ -32,7 +35,7 @@ const userFormResources = {
             labels: {
                 profilePhoto: "Photo de profil", changePhoto: "Changer la photo", activeAccount: "Compte Actif", firstLogin: "Première Connexion",
                 firstname: "Prénom", lastname: "Nom", birthday: "Date de naissance", email: "Email", phone: "Téléphone",
-                username: "Nom d'utilisateur", father: "Père", mother: "Mère", gender: "Genre"
+                username: "Nom d'utilisateur", father: "Père", mother: "Mère", gender: "Genre", contributionTier: "Niveau de contribution"
             },
             descriptions: {
                 activeAccount: "Autoriser ce compte à se connecter.", firstLogin: "Forcer le changement de MDP.",
@@ -64,6 +67,7 @@ const userFormResources = {
                 birthday: { title: "Date of Birth", desc: "Select date of birth (YYYY-MM-DD). Optional." },
                 image: { title: "Image (optional)", desc: "Add a profile photo (JPEG/PNG). Optional." },
                 gender: { title: "Gender", desc: "Select the user's gender: Male or Female." },
+                contribution_tier: { title: "Contribution Tier", desc: "Choose the contribution tier (LEVEL1 to LEVEL4). Optional." },
                 isactive: { title: "Active User", desc: "Enable to allow user login. Disable to block access." },
                 isfirstlogin: { title: "First Login", desc: "Enable if the user must change their password on first login." },
                 father: { title: "Father", desc: "Select the parent (father) if already registered. Optional." },
@@ -75,7 +79,7 @@ const userFormResources = {
             labels: {
                 profilePhoto: "Profile Photo", changePhoto: "Change Photo", activeAccount: "Active Account", firstLogin: "First Login",
                 firstname: "First Name", lastname: "Last Name", birthday: "Date of Birth", email: "Email", phone: "Phone",
-                username: "Username", father: "Father", mother: "Mother", gender: "Gender"
+                username: "Username", father: "Father", mother: "Mother", gender: "Gender", contributionTier: "Contribution Tier"
             },
             descriptions: {
                 activeAccount: "Allow this account to log in.", firstLogin: "Force password change.",
@@ -107,6 +111,7 @@ const userFormResources = {
                 birthday: { title: "تاريخ الميلاد", desc: "اختر تاريخ الميلاد (YYYY-MM-DD). اختياري." },
                 image: { title: "صورة (اختياري)", desc: "أضف صورة للملف الشخصي (JPEG/PNG). اختياري." },
                 gender: { title: "النوع", desc: "حدد نوع المستخدم: ذكر أو أنثى." },
+                contribution_tier: { title: "مستوى المساهمة", desc: "اختر مستوى المساهمة (LEVEL1 إلى LEVEL4). اختياري." },
                 isactive: { title: "مستخدم نشط", desc: "قم بالتفعيل للسماح بتسجيل دخول المستخدم. قم بالتعطيل لمنع الوصول." },
                 isfirstlogin: { title: "أول تسجيل دخول", desc: "قم بالتفعيل إذا كان يجب على المستخدم تغيير كلمة المرور عند أول تسجيل دخول." },
                 father: { title: "الأب", desc: "اختر الوالد (الأب) إذا كان مسجلاً بالفعل. اختياري." },
@@ -118,7 +123,7 @@ const userFormResources = {
             labels: {
                 profilePhoto: "صورة الملف الشخصي", changePhoto: "تغيير الصورة", activeAccount: "حساب نشط", firstLogin: "أول تسجيل دخول",
                 firstname: "الاسم الأول", lastname: "الاسم الأخير", birthday: "تاريخ الميلاد", email: "البريد الإلكتروني", phone: "الهاتف",
-                username: "اسم المستخدم", father: "الأب", mother: "الأم", gender: "النوع"
+                username: "اسم المستخدم", father: "الأب", mother: "الأم", gender: "النوع", contributionTier: "مستوى المساهمة"
             },
             descriptions: {
                 activeAccount: "السماح لهذا الحساب بتسجيل الدخول.", firstLogin: "فرض تغيير كلمة المرور.",
@@ -166,13 +171,18 @@ export default function EditUserForm({
         birthday: initial?.birthday ?? '',
         image_url: initial?.image_url ?? '',
         gender: (initial as any)?.gender ?? undefined,
+        contribution_tier: (initial as any)?.contribution_tier ?? null,
     })
     const [imageFile, setImageFile] = useState<File | null>(null)
     const [localPreview, setLocalPreview] = useState<string | null>(null)
     const [removeImage, setRemoveImage] = useState(false)
     const [allRoles, setAllRoles] = useState<Role[]>([])
     const [selectedRoleIds, setSelectedRoleIds] = useState<number[]>([])
-    const [allUsers, setAllUsers] = useState<User[]>([])
+
+    // Split for better efficiency
+    const [potentialFathers, setPotentialFathers] = useState<User[]>([])
+    const [potentialMothers, setPotentialMothers] = useState<User[]>([])
+
     const [fatherId, setFatherId] = useState<number | null>(initial?.id_father ?? null)
     const [motherId, setMotherId] = useState<number | null>(initial?.id_mother ?? null)
     const [saving, setSaving] = useState(false)
@@ -217,8 +227,13 @@ export default function EditUserForm({
         }
         async function loadUsers() {
             try {
-                const users = await getUsers({ status: 'all' })
-                setAllUsers(users)
+                // Fetch potential parents separately
+                const [fathers, mothers] = await Promise.all([
+                    getUsers({ status: 'all', gender: 'male' }),
+                    getUsers({ status: 'all', gender: 'female' })
+                ])
+                setPotentialFathers(fathers)
+                setPotentialMothers(mothers)
             } catch { }
         }
         loadRoles()
@@ -320,7 +335,7 @@ export default function EditUserForm({
         }
     }, [imageFile])
 
-    type HelpKey = 'firstname' | 'lastname' | 'username' | 'email' | 'telephone' | 'birthday' | 'image' | 'gender' | 'isactive' | 'isfirstlogin' | 'father' | 'mother' | 'roles'
+    type HelpKey = 'firstname' | 'lastname' | 'username' | 'email' | 'telephone' | 'birthday' | 'image' | 'gender' | 'contribution_tier' | 'isactive' | 'isfirstlogin' | 'father' | 'mother' | 'roles'
     const [helpKey, setHelpKey] = useState<HelpKey | null>(null)
     const helpText: Record<HelpKey, { title: string; desc: string }> = {
         firstname: { title: t('userForm.help.firstname.title'), desc: t('userForm.help.firstname.desc') },
@@ -331,6 +346,7 @@ export default function EditUserForm({
         birthday: { title: t('userForm.help.birthday.title'), desc: t('userForm.help.birthday.desc') },
         image: { title: t('userForm.help.image.title'), desc: t('userForm.help.image.desc') },
         gender: { title: t('userForm.help.gender.title'), desc: t('userForm.help.gender.desc') },
+        contribution_tier: { title: t('userForm.help.contribution_tier.title'), desc: t('userForm.help.contribution_tier.desc') },
         isactive: { title: t('userForm.help.isactive.title'), desc: t('userForm.help.isactive.desc') },
         isfirstlogin: { title: t('userForm.help.isfirstlogin.title'), desc: t('userForm.help.isfirstlogin.desc') },
         father: { title: t('userForm.help.father.title'), desc: t('userForm.help.father.desc') },
@@ -391,6 +407,7 @@ export default function EditUserForm({
                 telephone?: string
                 birthday?: string
                 gender?: 'male' | 'female' | null
+                contribution_tier?: 'LEVEL1' | 'LEVEL2' | 'LEVEL3' | 'LEVEL4' | null
                 id_father?: number
                 id_mother?: number
                 isactive?: number
@@ -405,6 +422,7 @@ export default function EditUserForm({
                 telephone: phone || undefined,
                 birthday: form.birthday || undefined,
                 gender: ((form as any).gender === 'male' || (form as any).gender === 'female') ? (form as any).gender : null,
+                contribution_tier: (form as any).contribution_tier ?? undefined,
                 id_father: fatherId ?? undefined,
                 id_mother: motherId ?? undefined,
                 isactive: isActive ? 1 : 0,
@@ -447,7 +465,8 @@ export default function EditUserForm({
 
     const currentBirthDate = form.birthday ? new Date(String(form.birthday)) : null
     const hasValidDate = (d: Date | null) => !!d && !isNaN(d.getTime())
-    const filteredUsers = allUsers.filter(u => {
+
+    const filterCandidates = (list: User[]) => list.filter(u => {
         if (initial?.id && u.id === initial.id) return false
         if (hasValidDate(currentBirthDate)) {
             const ub = u.birthday ? new Date(String(u.birthday)) : null
@@ -457,8 +476,8 @@ export default function EditUserForm({
         return false
     })
 
-    const filteredFathers = filteredUsers.filter(u => (u as any).gender === 'male')
-    const filteredMothers = filteredUsers.filter(u => (u as any).gender === 'female')
+    const filteredFathers = filterCandidates(potentialFathers)
+    const filteredMothers = filterCandidates(potentialMothers)
 
     const toOption = (u: User) => ({
         value: u.id,
@@ -467,7 +486,8 @@ export default function EditUserForm({
 
     let fatherOptions = [...filteredFathers.map(toOption)]
     if (initial?.id_father) {
-        const fu = allUsers.find(u => u.id === initial.id_father)
+        // Use potentialFathers
+        const fu = potentialFathers.find(u => u.id === initial.id_father)
         if (fu && !fatherOptions.some(o => o.value === fu.id)) {
             fatherOptions = [...fatherOptions, toOption(fu as User)]
         }
@@ -475,7 +495,8 @@ export default function EditUserForm({
 
     let motherOptions = [...filteredMothers.map(toOption)]
     if (initial?.id_mother) {
-        const mu = allUsers.find(u => u.id === initial.id_mother)
+        // Use potentialMothers
+        const mu = potentialMothers.find(u => u.id === initial.id_mother)
         if (mu && !motherOptions.some(o => o.value === mu.id)) {
             motherOptions = [...motherOptions, toOption(mu as User)]
         }
@@ -599,6 +620,22 @@ export default function EditUserForm({
                                         </div>
                                     </div>
                                 </div>
+                                <div className="col-md-6">
+                                    <div className="d-flex justify-content-between align-items-center">
+                                        <label className="form-label small text-muted mb-1">{t('userForm.labels.contributionTier')}</label>
+                                        <i className="bi bi-info-circle text-muted" onClick={() => setHelpKey('contribution_tier')} style={{ cursor: 'pointer' }}></i>
+                                    </div>
+                                    <select
+                                        className="form-select"
+                                        value={(form as any).contribution_tier ?? ''}
+                                        onChange={e => setForm(f => ({ ...f, contribution_tier: e.target.value ? (e.target.value as any) : null }))}
+                                    >
+                                        <option value="">--</option>
+                                        {tierOptions().map(opt => (
+                                            <option key={opt.value} value={opt.value}>{opt.label}</option>
+                                        ))}
+                                    </select>
+                                </div>
                             </div>
                         </div>
 
@@ -698,7 +735,7 @@ export default function EditUserForm({
                                             <div className="form-check pointer-events-none">
                                                 <input className="form-check-input" type="checkbox" id={`role-${role.id}`} checked={isSelected} readOnly />
                                                 <label className={`form-check-label user-select-none fw-medium ${isSelected ? 'text-primary' : 'text-secondary'}`} style={{ cursor: 'pointer' }} htmlFor={`role-${role.id}`}>
-                                                    {role.role}
+                                                    {getRoleLabel(role.role)}
                                                 </label>
                                             </div>
                                         </div>

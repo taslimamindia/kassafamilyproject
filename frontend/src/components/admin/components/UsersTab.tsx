@@ -47,6 +47,8 @@ export default function UsersTab({
     const [query, setQuery] = useState('')
     const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('active')
     const [firstLoginFilter, setFirstLoginFilter] = useState<'all' | 'yes' | 'no'>('all')
+    const [roleFilter, setRoleFilter] = useState<string>('all')
+    const [tierFilter, setTierFilter] = useState<string>('all')
     const [debouncedQuery, setDebouncedQuery] = useState('')
 
     const [editingId, setEditingId] = useState<number | null>(null)
@@ -63,6 +65,8 @@ export default function UsersTab({
                 status: statusFilter,
                 firstLogin: firstLoginFilter,
                 q: debouncedQuery || undefined,
+                roles: roleFilter !== 'all' ? roleFilter : undefined,
+                contribution_tier: tierFilter !== 'all' ? tierFilter : undefined,
             })
             setUsers(data)
             // Force image reloads by updating a cache-busting token
@@ -80,7 +84,7 @@ export default function UsersTab({
         return () => clearTimeout(timer)
     }, [query])
 
-    useEffect(() => { refresh() }, [debouncedQuery, statusFilter, firstLoginFilter])
+    useEffect(() => { refresh() }, [debouncedQuery, statusFilter, firstLoginFilter, roleFilter, tierFilter])
 
     function startCreate() {
         setEditingId(0)
@@ -157,6 +161,10 @@ export default function UsersTab({
                 onQueryChange={setQuery}
                 onStatusFilterChange={setStatusFilter}
                 onFirstLoginFilterChange={setFirstLoginFilter}
+                roleFilter={roleFilter}
+                onRoleFilterChange={setRoleFilter}
+                tierFilter={tierFilter}
+                onTierFilterChange={setTierFilter}
                 imageBustToken={imageBustToken}
             />
         </div>

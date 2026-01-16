@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { getToken } from '../../services/auth'
-import { getCurrentUser, type User } from '../../services/users'
+import { getCurrentUser, getUserById, getUsers, type User } from '../../services/users'
 import './ViewProfile.css'
 import { useTranslation } from 'react-i18next'
 import i18n from '../../i18n'
+import { getTierLabel } from '../../constants/contributionTiers'
+import { getRoleLabel } from '../../constants/roleLabels'
 
 // Localized dictionary for this component (decentralized)
 const viewProfileResources = {
@@ -15,13 +17,15 @@ const viewProfileResources = {
             email: 'Email',
             phone: 'Téléphone',
             birthday: 'Date de naissance',
-            parentIds: 'Identifiants parentaux',
+            parents: 'Parents',
             father: 'Père',
             mother: 'Mère',
+            contributionTier: 'Niveau de contribution',
+            roles: 'Rôles',
             createAdmin: 'Créer un administrateur',
         },
         profileEdit: { profilePhoto: 'Photo de profil' },
-        common: { avatar: 'Avatar de profil' },
+        common: { avatar: 'Avatar de profil', firstLogin: 'Première connexion', confirmedMember: 'Membre confirmé' },
         header: { editProfile: 'Modifier le profil' },
         users: { card: { active: 'Actif', inactive: 'Inactif' } },
     },
@@ -32,13 +36,15 @@ const viewProfileResources = {
             email: 'Email',
             phone: 'Phone',
             birthday: 'Birth date',
-            parentIds: 'Parental IDs',
+            parents: 'Parents',
             father: 'Father',
             mother: 'Mother',
+            contributionTier: 'Contribution level',
+            roles: 'Roles',
             createAdmin: 'Create an administrator',
         },
         profileEdit: { profilePhoto: 'Profile photo' },
-        common: { avatar: 'Profile avatar' },
+        common: { avatar: 'Profile avatar', firstLogin: 'First login', confirmedMember: 'Confirmed member' },
         header: { editProfile: 'Edit profile' },
         users: { card: { active: 'Active', inactive: 'Inactive' } },
     },
@@ -49,13 +55,15 @@ const viewProfileResources = {
             email: 'البريد الإلكتروني',
             phone: 'رقم الهاتف',
             birthday: 'تاريخ الميلاد',
-            parentIds: 'معرّفات الوالدين',
+            parents: 'الوالدان',
             father: 'الأب',
             mother: 'الأم',
+            contributionTier: 'مستوى المساهمة',
+            roles: 'الأدوار',
             createAdmin: 'إنشاء مسؤول',
         },
         profileEdit: { profilePhoto: 'صورة الملف' },
-        common: { avatar: 'الصورة الرمزية للملف' },
+        common: { avatar: 'الصورة الرمزية للملف', firstLogin: 'أول تسجيل دخول', confirmedMember: 'عضو مؤكد' },
         header: { editProfile: 'تعديل الملف' },
         users: { card: { active: 'نشط', inactive: 'غير نشط' } },
     },
@@ -96,6 +104,8 @@ export default function ViewProfile() {
     const [showImage, setShowImage] = useState<boolean>(false)
     const [imageBroken, setImageBroken] = useState<boolean>(false)
     const [cacheBust, setCacheBust] = useState<number>(0)
+    const [father, setFather] = useState<User | null>(null)
+    const [mother, setMother] = useState<User | null>(null)
     const initials = useMemo(() => {
         const f = user?.firstname?.trim()?.[0] ?? ''
         const l = user?.lastname?.trim()?.[0] ?? ''
@@ -106,8 +116,14 @@ export default function ViewProfile() {
         async function loadUser() {
             try {
                 const me = await getCurrentUser()
-                setUser(me ?? null)
-                setShowImage(!!me?.image_url)
+                // Enrich with roles using list endpoint (single by id) — includes roles array
+                let full = me
+                try {
+                    const arr = await getUsers({ status: 'all', id: me.id })
+                    if (Array.isArray(arr) && arr.length > 0) full = arr[0]
+                } catch {}
+                setUser(full ?? null)
+                setShowImage(!!full?.image_url)
             } catch (e) {
                 setError(t('profileEdit.loadError'))
             }
@@ -122,6 +138,33 @@ export default function ViewProfile() {
             setCacheBust(0)
         }
     }, [user?.image_url])
+
+    // Charger les informations des parents si disponibles
+    useEffect(() => {
+        let cancelled = false
+        async function loadParents() {
+            try {
+                setFather(null)
+                setMother(null)
+                const promises: Promise<void>[] = []
+                if (user?.id_father) {
+                    promises.push(
+                        getUserById(user.id_father).then(u => { if (!cancelled) setFather(u) }).catch(() => {})
+                    )
+                }
+                if (user?.id_mother) {
+                    promises.push(
+                        getUserById(user.id_mother).then(u => { if (!cancelled) setMother(u) }).catch(() => {})
+                    )
+                }
+                if (promises.length) await Promise.all(promises)
+            } catch {
+                // Ignorer les erreurs parents ici
+            }
+        }
+        loadParents()
+        return () => { cancelled = true }
+    }, [user?.id_father, user?.id_mother])
 
 
     return (
@@ -194,9 +237,50 @@ export default function ViewProfile() {
                             <div className="detail-value">{user.birthday ?? '—'}</div>
                         </div>
                         <div className="detail-item" role="listitem">
-                            <div className="detail-label">{t('profileView.parentIds')}</div>
+                            <div className="detail-label">{t('profileView.contributionTier')}</div>
+                            <div className="detail-value">{getTierLabel(user.contribution_tier) || '—'}</div>
+                        </div>
+                        <div className="detail-item" role="listitem">
+                            <div className="detail-label">{t('profileView.roles')}</div>
                             <div className="detail-value">
-                                {t('profileView.father')}: {user.id_father ?? '—'} | {t('profileView.mother')}: {user.id_mother ?? '—'}
+                                {user.roles && user.roles.length ? (
+                                    <div className="chips" aria-label={t('profileView.roles')}>
+                                        {user.roles.map(r => (
+                                            <span key={r.id} className="chip chip-role">{getRoleLabel(r.role)}</span>
+                                        ))}
+                                    </div>
+                                ) : '—'}
+                            </div>
+                        </div>
+                        <div className="detail-item" role="listitem">
+                            <div className="detail-label">{t('profileView.parents')}</div>
+                            <div className="detail-value">
+                                <div className="parents-cards">
+                                    <div className="parent-card" aria-label={t('profileView.father')}>
+                                        <div className="parent-avatar">
+                                            <span className="parent-initials">{(father?.firstname?.[0] || '') + (father?.lastname?.[0] || '') || '–'}</span>
+                                            {father?.image_url && (
+                                                <img src={father.image_url} alt={t('profileView.father')} onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none' }} />
+                                            )}
+                                        </div>
+                                        <div className="parent-info">
+                                            <div className="parent-name">{father ? `${father.firstname} ${father.lastname}` : (typeof user.id_father !== 'undefined' && user.id_father !== null ? `#${user.id_father}` : '—')}</div>
+                                            <div className="parent-birthday">{father?.birthday || '—'}</div>
+                                        </div>
+                                    </div>
+                                    <div className="parent-card" aria-label={t('profileView.mother')}>
+                                        <div className="parent-avatar">
+                                            <span className="parent-initials">{(mother?.firstname?.[0] || '') + (mother?.lastname?.[0] || '') || '–'}</span>
+                                            {mother?.image_url && (
+                                                <img src={mother.image_url} alt={t('profileView.mother')} onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none' }} />
+                                            )}
+                                        </div>
+                                        <div className="parent-info">
+                                            <div className="parent-name">{mother ? `${mother.firstname} ${mother.lastname}` : (typeof user.id_mother !== 'undefined' && user.id_mother !== null ? `#${user.id_mother}` : '—')}</div>
+                                            <div className="parent-birthday">{mother?.birthday || '—'}</div>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>

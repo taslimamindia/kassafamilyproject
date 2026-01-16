@@ -1,9 +1,13 @@
 import { useMemo, useState, useEffect } from 'react'
 import { updateUserById, getCurrentUser, getUserById, deleteUser, type User } from '../../../services/users'
 import { getRolesForUser } from '../../../services/roleAttributions'
+import { getRoles, type Role } from '../../../services/roles'
 import FilterBar from '../../common/FilterBar'
 import { useTranslation } from 'react-i18next'
 import i18n from '../../../i18n'
+import { getTierLabel, tierOptions } from '../../../constants/contributionTiers'
+import { getRoleLabel, mapRoleNamesToOptions } from '../../../constants/roleLabels'
+import Select, { type StylesConfig } from 'react-select'
 
 // Localized dictionary for this component (decentralized)
 const usersTableResources = {
@@ -23,13 +27,17 @@ const usersTableResources = {
                 flAll: 'Tous',
                 flYes: '1ère Cnx',
                 flNo: 'Déjà Cnx',
+                role: 'Rôle',
+                tier: 'Niveau',
+                any: 'Tous',
+                reset: 'Réinitialiser',
             },
             noneFound: 'Aucun utilisateur trouvé',
             confirmDelete: 'Supprimer (désactiver) cet utilisateur ?',
             confirmHardDelete: 'Êtes-vous sûr de vouloir supprimer définitivement cet utilisateur ? Cette action est irréversible.',
             deactivateError: 'Erreur lors de la désactivation',
             deleteError: 'Erreur lors de la suppression',
-            fields: { tel: 'Tél', born: 'Né(e)' },
+            fields: { tel: 'Tél', born: 'Né(e)', role: 'Rôle', tier: 'Niveau' },
             card: {
                 active: 'Actif',
                 inactive: 'Inactif',
@@ -62,13 +70,17 @@ const usersTableResources = {
                 flAll: 'All',
                 flYes: 'First',
                 flNo: 'Already',
+                role: 'Role',
+                tier: 'Contribution',
+                any: 'Any',
+                reset: 'Reset',
             },
             noneFound: 'No users found',
             confirmDelete: 'Delete (deactivate) this user?',
             confirmHardDelete: 'Are you sure you want to permanently delete this user? This action cannot be undone.',
             deactivateError: 'Error while deactivating',
             deleteError: 'Error while deleting',
-            fields: { tel: 'Tel', born: 'Born' },
+            fields: { tel: 'Tel', born: 'Born', role: 'Role', tier: 'Contribution' },
             card: {
                 active: 'Active',
                 inactive: 'Inactive',
@@ -101,13 +113,17 @@ const usersTableResources = {
                 flAll: 'الكل',
                 flYes: 'أول',
                 flNo: 'سابق',
+                role: 'الدور',
+                tier: 'المساهمة',
+                any: 'الكل',
+                reset: 'إعادة تعيين',
             },
             noneFound: 'لم يتم العثور على مستخدمين',
             confirmDelete: 'حذف (تعطيل) هذا المستخدم؟',
             confirmHardDelete: 'هل أنت متأكد أنك تريد حذف هذا المستخدم نهائيًا؟ هذا الإجراء لا يمكن التراجع عنه.',
             deactivateError: 'خطأ أثناء التعطيل',
             deleteError: 'خطأ أثناء الحذف',
-            fields: { tel: 'هاتف', born: 'مولود' },
+            fields: { tel: 'هاتف', born: 'مولود', role: 'الدور', tier: 'المساهمة' },
             card: {
                 active: 'نشط',
                 inactive: 'غير نشط',
@@ -128,6 +144,25 @@ const usersTableResources = {
 
 for (const [lng, res] of Object.entries(usersTableResources)) {
     i18n.addResourceBundle(lng, 'translation', res as any, true, false)
+}
+
+// Compact styles for react-select to fit toolbar nicely
+const compactSelectStyles: StylesConfig<{ value: string; label: string }, false> = {
+    control: (base) => ({
+        ...base,
+        minHeight: 28,
+        height: 28,
+        borderColor: '#dee2e6',
+        boxShadow: 'none',
+    }),
+    valueContainer: (base) => ({ ...base, height: 28, padding: '0 6px' }),
+    indicatorsContainer: (base) => ({ ...base, height: 28 }),
+    dropdownIndicator: (base) => ({ ...base, padding: 4 }),
+    clearIndicator: (base) => ({ ...base, padding: 4 }),
+    input: (base) => ({ ...base, margin: 0, padding: 0 }),
+    placeholder: (base) => ({ ...base, margin: 0, fontSize: '0.85rem' }),
+    singleValue: (base) => ({ ...base, margin: 0, fontSize: '0.85rem' }),
+    menu: (base) => ({ ...base, zIndex: 10 }),
 }
 
 function appendCacheBust(url?: string, token?: number): string | undefined {
@@ -195,23 +230,37 @@ function UserCard({ user, isViewerAdmin, imageBustToken, onEdit, onDelete, onHar
                     <p className="card-subtitle mb-3 text-muted small">@{user.username}</p>
 
                     <div className="text-start small mb-3 px-2">
-                        {isViewerAdmin && (
-                            <div className="d-flex justify-content-between mb-1">
-                                <span className="text-muted">{t('common.id')}:</span>
-                                <span className="fw-medium">{user.id}</span>
-                            </div>
-                        )}
-                        <div className="d-flex justify-content-between mb-1">
-                            <span className="text-muted">{t('common.email')}:</span>
-                            <span className="fw-medium text-truncate" style={{ maxWidth: '140px' }} title={user.email}>{user.email || '-'}</span>
-                        </div>
-                        <div className="d-flex justify-content-between mb-1">
-                            <span className="text-muted">{t('users.fields.tel')}:</span>
-                            <span className="fw-medium">{user.telephone || '-'}</span>
-                        </div>
-                        <div className="d-flex justify-content-between mb-1">
-                            <span className="text-muted">{t('users.fields.born')}:</span>
-                            <span className="fw-medium">{user.birthday || '-'}</span>
+                        <div className="d-flex flex-wrap gap-2 align-items-center">
+                            {isViewerAdmin && (
+                                <span className="badge bg-light text-muted border rounded-pill" title={`ID: ${user.id}`}>#{user.id}</span>
+                            )}
+                            {user.email && (
+                                <a href={`mailto:${user.email}`} className="badge bg-light text-dark border rounded-pill text-decoration-none text-truncate" style={{ maxWidth: '180px' }} title={user.email}>
+                                    <i className="bi bi-envelope me-1" />{user.email}
+                                </a>
+                            )}
+                            {user.telephone && (
+                                <a href={`tel:${user.telephone}`} className="badge bg-light text-dark border rounded-pill text-decoration-none text-truncate" style={{ maxWidth: '160px' }} title={user.telephone}>
+                                    <i className="bi bi-telephone me-1" />{user.telephone}
+                                </a>
+                            )}
+                            {user.birthday && (
+                                <span className="badge bg-light text-dark border rounded-pill text-truncate" style={{ maxWidth: '160px' }} title={user.birthday}>
+                                    <i className="bi bi-calendar3 me-1" />{user.birthday}
+                                </span>
+                            )}
+                            {(user.roles || []).length > 0 && (
+                                <span className="d-inline-flex align-items-center gap-1" title={(user.roles || []).map(r => r.role).join(', ')}>
+                                    {(user.roles || []).map(r => (
+                                                <span key={r.id} className="badge bg-secondary-subtle text-secondary rounded-pill">{getRoleLabel(r.role)}</span>
+                                            ))}
+                                </span>
+                            )}
+                            {getTierLabel(user.contribution_tier) && (
+                                <span className="badge bg-info-subtle text-info rounded-pill text-truncate" style={{ maxWidth: '160px' }} title={getTierLabel(user.contribution_tier)}>
+                                    <i className="bi bi-bar-chart-fill me-1" />{getTierLabel(user.contribution_tier)}
+                                </span>
+                            )}
                         </div>
                     </div>
 
@@ -287,6 +336,10 @@ export default function UsersTable({
     onQueryChange,
     onStatusFilterChange,
     onFirstLoginFilterChange,
+    roleFilter,
+    onRoleFilterChange,
+    tierFilter,
+    onTierFilterChange,
     imageBustToken,
 }: {
     users: User[]
@@ -298,11 +351,16 @@ export default function UsersTable({
     onQueryChange: (q: string) => void
     onStatusFilterChange: (s: 'all' | 'active' | 'inactive') => void
     onFirstLoginFilterChange: (f: 'all' | 'yes' | 'no') => void
+    roleFilter: string
+    onRoleFilterChange: (r: string) => void
+    tierFilter: string
+    onTierFilterChange: (t: string) => void
     imageBustToken: number
 }) {
     const { t } = useTranslation()
     const [error, setError] = useState<string | null>(null)
     const [isViewerAdmin, setIsViewerAdmin] = useState(false)
+    const [roleOptions, setRoleOptions] = useState<Role[]>([])
 
     useEffect(() => {
         let mounted = true
@@ -316,6 +374,7 @@ export default function UsersTable({
         }).catch(() => {
             // Ignore errors, default to false
         })
+        getRoles().then(rs => { if (mounted) setRoleOptions(rs) }).catch(() => {})
         return () => { mounted = false }
     }, [])
 
@@ -370,45 +429,72 @@ export default function UsersTable({
     return (
         <div>
             {error && <div className="alert alert-danger" role="alert">{error}</div>}
-
             <div className="container-fluid p-0 mb-3">
-                <div className="row g-3 align-items-center">
-                    <div className="col-12 col-md-4 d-none d-md-block"></div>
-                    <div className="col-12 col-md-4 d-flex justify-content-center">
-                        <div className="flex-grow-1" style={{ maxWidth: '520px' }}>
-                            <FilterBar value={query} onChange={onQueryChange} placeholder={t('users.searchPlaceholder')} />
+                <div className="d-flex flex-wrap align-items-center gap-2">
+                    <div className="flex-grow-1" style={{ minWidth: '240px', maxWidth: '520px' }}>
+                        <FilterBar value={query} onChange={onQueryChange} placeholder={t('users.searchPlaceholder')} />
+                    </div>
+                    <div className="btn-toolbar gap-2" role="toolbar" aria-label="filters">
+                        <div className="btn-group shadow-sm" role="group" aria-label={t('users.filter.status')}>
+                            <input type="radio" className="btn-check" name="status" id="statusAll" autoComplete="off"
+                                checked={statusFilter === 'all'} onChange={() => onStatusFilterChange('all')} />
+                            <label className="btn btn-outline-secondary btn-sm" htmlFor="statusAll"><i className="bi bi-list me-1"></i>{t('users.filter.all')}</label>
+
+                            <input type="radio" className="btn-check" name="status" id="statusActive" autoComplete="off"
+                                checked={statusFilter === 'active'} onChange={() => onStatusFilterChange('active')} />
+                            <label className="btn btn-outline-success btn-sm" htmlFor="statusActive"><i className="bi bi-check-circle me-1"></i>{t('users.filter.active')}</label>
+
+                            <input type="radio" className="btn-check" name="status" id="statusInactive" autoComplete="off"
+                                checked={statusFilter === 'inactive'} onChange={() => onStatusFilterChange('inactive')} />
+                            <label className="btn btn-outline-secondary btn-sm" htmlFor="statusInactive"><i className="bi bi-slash-circle me-1"></i>{t('users.filter.inactive')}</label>
+                        </div>
+
+                        <div className="btn-group shadow-sm" role="group" aria-label={t('users.filter.firstLogin')}>
+                            <input type="radio" className="btn-check" name="firstLogin" id="flAll" autoComplete="off"
+                                checked={firstLoginFilter === 'all'} onChange={() => onFirstLoginFilterChange('all')} />
+                            <label className="btn btn-outline-secondary btn-sm" htmlFor="flAll"><i className="bi bi-list me-1"></i>{t('users.filter.flAll')}</label>
+
+                            <input type="radio" className="btn-check" name="firstLogin" id="flYes" autoComplete="off"
+                                checked={firstLoginFilter === 'yes'} onChange={() => onFirstLoginFilterChange('yes')} />
+                            <label className="btn btn-outline-warning btn-sm text-dark" htmlFor="flYes"><i className="bi bi-stars me-1"></i>{t('users.filter.flYes')}</label>
+
+                            <input type="radio" className="btn-check" name="firstLogin" id="flNo" autoComplete="off"
+                                checked={firstLoginFilter === 'no'} onChange={() => onFirstLoginFilterChange('no')} />
+                            <label className="btn btn-outline-info btn-sm text-dark" htmlFor="flNo"><i className="bi bi-person-check me-1"></i>{t('users.filter.flNo')}</label>
+                        </div>
+
+                        <div className="shadow-sm d-flex align-items-center gap-1">
+                            <i className="bi bi-person-badge text-muted"></i>
+                            <div style={{ width: '160px' }}>
+                                <Select
+                                    isClearable
+                                    placeholder={t('users.filter.role')}
+                                    styles={compactSelectStyles}
+                                    value={roleFilter !== 'all' ? { value: roleFilter, label: getRoleLabel(roleFilter) } : null}
+                                    onChange={(opt) => onRoleFilterChange(opt?.value ?? 'all')}
+                                    options={mapRoleNamesToOptions(roleOptions)}
+                                />
+                            </div>
+                        </div>
+                        <div className="shadow-sm d-flex align-items-center gap-1">
+                            <i className="bi bi-bar-chart text-muted"></i>
+                            <div style={{ width: '180px' }}>
+                                <Select
+                                    isClearable
+                                    placeholder={t('users.filter.tier')}
+                                    styles={compactSelectStyles}
+                                    value={tierFilter !== 'all' ? { value: tierFilter, label: getTierLabel(tierFilter as any) } : null}
+                                    onChange={(opt) => onTierFilterChange(opt?.value ?? 'all')}
+                                    options={tierOptions()}
+                                />
+                            </div>
                         </div>
                     </div>
-                    <div className="col-12 col-md-4 d-flex justify-content-md-end justify-content-center">
-                        <div className="btn-toolbar gap-2" role="toolbar" aria-label="filters">
-                            <div className="btn-group shadow-sm" role="group" aria-label={t('users.filter.status')}>
-                                <input type="radio" className="btn-check" name="status" id="statusAll" autoComplete="off"
-                                    checked={statusFilter === 'all'} onChange={() => onStatusFilterChange('all')} />
-                                <label className="btn btn-outline-secondary btn-sm" htmlFor="statusAll">{t('users.filter.all')}</label>
-
-                                <input type="radio" className="btn-check" name="status" id="statusActive" autoComplete="off"
-                                    checked={statusFilter === 'active'} onChange={() => onStatusFilterChange('active')} />
-                                <label className="btn btn-outline-success btn-sm" htmlFor="statusActive">{t('users.filter.active')}</label>
-
-                                <input type="radio" className="btn-check" name="status" id="statusInactive" autoComplete="off"
-                                    checked={statusFilter === 'inactive'} onChange={() => onStatusFilterChange('inactive')} />
-                                <label className="btn btn-outline-secondary btn-sm" htmlFor="statusInactive">{t('users.filter.inactive')}</label>
-                            </div>
-
-                            <div className="btn-group shadow-sm" role="group" aria-label={t('users.filter.firstLogin')}>
-                                <input type="radio" className="btn-check" name="firstLogin" id="flAll" autoComplete="off"
-                                    checked={firstLoginFilter === 'all'} onChange={() => onFirstLoginFilterChange('all')} />
-                                <label className="btn btn-outline-secondary btn-sm" htmlFor="flAll">{t('users.filter.flAll')}</label>
-
-                                <input type="radio" className="btn-check" name="firstLogin" id="flYes" autoComplete="off"
-                                    checked={firstLoginFilter === 'yes'} onChange={() => onFirstLoginFilterChange('yes')} />
-                                <label className="btn btn-outline-warning btn-sm text-dark" htmlFor="flYes">{t('users.filter.flYes')}</label>
-
-                                <input type="radio" className="btn-check" name="firstLogin" id="flNo" autoComplete="off"
-                                    checked={firstLoginFilter === 'no'} onChange={() => onFirstLoginFilterChange('no')} />
-                                <label className="btn btn-outline-info btn-sm text-dark" htmlFor="flNo">{t('users.filter.flNo')}</label>
-                            </div>
-                        </div>
+                    <div className="ms-auto">
+                        <button className="btn btn-sm btn-outline-secondary" type="button"
+                            onClick={() => { onQueryChange(''); onStatusFilterChange('active'); onFirstLoginFilterChange('all'); onRoleFilterChange('all'); onTierFilterChange('all') }}>
+                            <i className="bi bi-broom me-1"></i>{t('users.filter.reset')}
+                        </button>
                     </div>
                 </div>
             </div>

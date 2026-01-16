@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { getCurrentUser, updateUserById, updateUserByIdWithImage, type User } from '../../services/users'
 import { getRolesForUser } from '../../services/roleAttributions'
 import { useTranslation } from 'react-i18next'
@@ -76,8 +76,12 @@ export default function EditProfile() {
     const [error, setError] = useState<string | null>(null)
     const [success, setSuccess] = useState<string | null>(null)
     const [imageFile, setImageFile] = useState<File | null>(null)
+    const fileInputRef = useRef<HTMLInputElement | null>(null)
     const [myId, setMyId] = useState<number | null>(null)
     const [isAdmin, setIsAdmin] = useState<boolean>(false)
+
+    // Local preview URL for selected file
+    const [localPreviewUrl, setLocalPreviewUrl] = useState<string | null>(null)
 
     useEffect(() => {
         async function load() {
@@ -110,6 +114,16 @@ export default function EditProfile() {
         load()
     }, [])
 
+    useEffect(() => {
+        if (imageFile) {
+            const url = URL.createObjectURL(imageFile)
+            setLocalPreviewUrl(url)
+            return () => URL.revokeObjectURL(url)
+        } else {
+            setLocalPreviewUrl(null)
+        }
+    }, [imageFile])
+
     function updateField<K extends keyof User>(key: K, value: User[K]) {
         setForm((prev) => ({ ...prev, [key]: value }))
     }
@@ -136,7 +150,9 @@ export default function EditProfile() {
                 } else {
                     updatedUser = await updateUserById(myId, {
                         ...payload,
-                        image_url: form.image_url
+                        // if image_url is explicitly null, request deletion
+                        image_url: form.image_url ?? undefined,
+                        remove_image: form.image_url === null ? true : undefined,
                     })
                 }
                 
@@ -164,58 +180,88 @@ export default function EditProfile() {
         return <div className="text-muted">{t('profileEdit.loadingForm')}</div>
     }
 
+    const previewSrc = localPreviewUrl ?? form.image_url ?? ''
+    const avatarStyle: React.CSSProperties = { width: 140, height: 140, objectFit: 'cover', borderRadius: '50%', border: '1px solid #e6e6e6' }
+
+    function triggerFileChoose() {
+        fileInputRef.current?.click()
+    }
+
+    function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+        setImageFile(e.target.files?.[0] ?? null)
+    }
+
+    function removeImage() {
+        setImageFile(null)
+        // remove existing image url from preview and mark for deletion
+        setForm(prev => ({ ...prev, image_url: null }))
+        if (fileInputRef.current) fileInputRef.current.value = ''
+    }
+
     return (
         <form onSubmit={onSubmit} className="card">
             <div className="card-body">
                 {error && <div className="alert alert-danger">{error}</div>}
                 {success && <div className="alert alert-success">{success}</div>}
-                <div className="row g-3">
-                    <div className="col-md-6">
-                        <label className="form-label">{t('profileEdit.username')}</label>
-                        <input
-                            className="form-control"
-                            value={form.username ?? ''}
-                            onChange={(e) => updateField('username', e.target.value as any)}
-                            disabled={!isAdmin}
-                            required={isAdmin}
-                        />
-                        {!isAdmin && (
-                            <div className="form-text">{t('profileEdit.usernameHelp')}</div>
-                        )}
+
+                <div className="row">
+                    <div className="col-md-4 d-flex flex-column align-items-center text-center mb-3">
+                        <div className="mb-3">
+                            {previewSrc ? (
+                                <img src={previewSrc} alt={t('profileEdit.preview')} style={avatarStyle} />
+                            ) : (
+                                <div style={{ ...avatarStyle, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#777' }}>{(form.firstname || form.username || 'U').charAt(0).toUpperCase()}</div>
+                            )}
+                        </div>
+                        <div className="d-grid gap-2 w-100">
+                            <input ref={fileInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleFileChange} />
+                            <button type="button" className="btn btn-outline-secondary btn-sm" onClick={triggerFileChoose}>{t('profileEdit.profilePhoto')}</button>
+                            <button type="button" className="btn btn-outline-danger btn-sm" onClick={removeImage} disabled={!previewSrc && !imageFile}>Remove</button>
+                        </div>
                     </div>
-                    <div className="col-md-6">
-                        <label className="form-label">{t('profileEdit.firstname')}</label>
-                        <input className="form-control" value={form.firstname ?? ''} onChange={(e) => updateField('firstname', e.target.value as any)} required />
-                    </div>
-                    <div className="col-md-6">
-                        <label className="form-label">{t('profileEdit.lastname')}</label>
-                        <input className="form-control" value={form.lastname ?? ''} onChange={(e) => updateField('lastname', e.target.value as any)} required />
-                    </div>
-                    <div className="col-md-6">
-                        <label className="form-label">{t('profileEdit.email')}</label>
-                        <input type="email" className="form-control" value={form.email ?? ''} onChange={(e) => updateField('email', e.target.value as any)} />
-                    </div>
-                    <div className="col-md-6">
-                        <label className="form-label">{t('profileEdit.telephone')}</label>
-                        <input className="form-control" value={form.telephone ?? ''} onChange={(e) => updateField('telephone', e.target.value as any)} />
-                    </div>
-                    <div className="col-md-6">
-                        <label className="form-label">{t('profileEdit.birthday')}</label>
-                        <input type="date" className="form-control" value={form.birthday ?? ''} onChange={(e) => updateField('birthday', e.target.value as any)} />
-                    </div>
-                    <div className="col-md-6">
-                        <label className="form-label">{t('profileEdit.profilePhoto')}</label>
-                        <input type="file" accept="image/*" className="form-control" onChange={e => setImageFile(e.target.files?.[0] ?? null)} />
-                        {form.image_url && (
-                            <div className="mt-2">
-                                <img src={form.image_url} alt={t('profileEdit.preview')} style={{ maxWidth: '120px', borderRadius: '8px' }} />
+
+                    <div className="col-md-8">
+                        <div className="row g-3">
+                            <div className="col-md-6">
+                                <label className="form-label">{t('profileEdit.username')}</label>
+                                <input
+                                    className="form-control"
+                                    value={form.username ?? ''}
+                                    onChange={(e) => updateField('username', e.target.value as any)}
+                                    disabled={!isAdmin}
+                                    required={isAdmin}
+                                />
+                                {!isAdmin && (
+                                    <div className="form-text">{t('profileEdit.usernameHelp')}</div>
+                                )}
                             </div>
-                        )}
+                            <div className="col-md-6">
+                                <label className="form-label">{t('profileEdit.firstname')}</label>
+                                <input className="form-control" value={form.firstname ?? ''} onChange={(e) => updateField('firstname', e.target.value as any)} required />
+                            </div>
+                            <div className="col-md-6">
+                                <label className="form-label">{t('profileEdit.lastname')}</label>
+                                <input className="form-control" value={form.lastname ?? ''} onChange={(e) => updateField('lastname', e.target.value as any)} required />
+                            </div>
+                            <div className="col-md-6">
+                                <label className="form-label">{t('profileEdit.email')}</label>
+                                <input type="email" className="form-control" value={form.email ?? ''} onChange={(e) => updateField('email', e.target.value as any)} />
+                            </div>
+                            <div className="col-md-6">
+                                <label className="form-label">{t('profileEdit.telephone')}</label>
+                                <input className="form-control" value={form.telephone ?? ''} onChange={(e) => updateField('telephone', e.target.value as any)} />
+                            </div>
+                            <div className="col-md-6">
+                                <label className="form-label">{t('profileEdit.birthday')}</label>
+                                <input type="date" className="form-control" value={form.birthday ?? ''} onChange={(e) => updateField('birthday', e.target.value as any)} />
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
             <div className="card-footer text-end">
-                <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? t('profileEdit.saving') : t('common.save')}</button>
+                <button type="submit" className="btn btn-primary me-2" disabled={saving}>{saving ? t('profileEdit.saving') : t('common.save')}</button>
+                <button type="button" className="btn btn-secondary" onClick={() => window.location.reload()}>Cancel</button>
             </div>
         </form>
     )
