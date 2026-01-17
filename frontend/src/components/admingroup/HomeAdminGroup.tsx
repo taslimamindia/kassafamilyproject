@@ -6,19 +6,19 @@ import UsersTab from '../admin/components/UsersTab'
 const homeAdminGroupResources = {
     fr: {
         admingroup: {
-            space: 'Espace Admin de Groupe',
+            space: "Espace de la gestion de la famille",
             tabs: { users: 'Utilisateurs' }
         }
     },
     en: {
         admingroup: {
-            space: 'Group Admin Area',
+            space: 'Family Management Area',
             tabs: { users: 'Users' }
         }
     },
     ar: {
         admingroup: {
-            space: 'منطقة مسؤول المجموعة',
+            space: 'منطقة إدارة العائلة',
             tabs: { users: 'المستخدمون' }
         }
     },

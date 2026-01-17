@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useLayoutEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { getMessages, markMessageRead } from '@src/services/messages'
+import { getMessages, markMessageRead, markAllMessagesRead } from '@src/services/messages'
 import './Notification.css'
 import Chat from './Chat'
 
@@ -166,7 +166,13 @@ export default function Notifications() {
         markMessageRead(parseInt(id)).catch(console.error)
 		setMessages(prev => prev.map(m => (m.id === id ? { ...m, read: true } : m)))
 		// Navigate to message link
-		navigate(msg.link)
+		if (msg.link && msg.link !== '#' && msg.link.trim() !== '') {
+			if (/^https?:\/\//i.test(msg.link)) {
+				window.location.href = msg.link
+			} else {
+				navigate(msg.link)
+			}
+		}
 		setOpen(false)
 	}
 
@@ -196,7 +202,14 @@ export default function Notifications() {
 							</button>
 							<button
 								className="btn btn-sm btn-link"
-								onClick={() => setMessages(prev => prev.map(m => ({ ...m, read: true })))}
+								onClick={async () => {
+									try {
+										await markAllMessagesRead()
+										setMessages(prev => prev.map(m => ({ ...m, read: true })))
+									} catch (err) {
+										console.error('Failed to mark all as read', err)
+									}
+								}}
 							>
 								Marquer lues
 							</button>
@@ -209,7 +222,7 @@ export default function Notifications() {
 						))}
 					</div>
 					<div className="dropdown-footer text-center mt-2">
-						<button className="btn btn-sm btn-outline-secondary" onClick={() => { setOpen(false); navigate('/notifications') }}>
+						<button type="button" className="btn btn-sm btn-outline-secondary" onClick={(e) => { e.preventDefault(); setOpen(false); navigate('/notifications') }}>
 							Voir toutes
 						</button>
 					</div>

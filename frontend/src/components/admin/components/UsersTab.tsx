@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
-import { getUsers, type User } from '../../../services/users'
-import AdminActions from './AdminActions'
+import { getUsers, type User, getCurrentUser } from '../../../services/users'
+import { getRolesForUser } from '../../../services/roleAttributions'
 import AddUserForm from './AddUserForm'
 import EditUserForm from './EditUserForm'
 import UsersTable from './UsersTable'
@@ -50,6 +50,39 @@ export default function UsersTab({
     const [roleFilter, setRoleFilter] = useState<string>('all')
     const [tierFilter, setTierFilter] = useState<string>('all')
     const [debouncedQuery, setDebouncedQuery] = useState('')
+
+    // Set default `statusFilter` based on current user's role:
+    // - 'active' when user has 'admin'
+    // - 'all' when user has 'admingroup'
+    useEffect(() => {
+        let mounted = true
+        ;(async () => {
+            try {
+                const me = await getCurrentUser()
+                if (!mounted) return
+                try {
+                    const roles = await getRolesForUser(me.id)
+                    const names = roles.map(r => (r.role || '').toLowerCase())
+                    if (names.includes('admingroup')) {
+                        setStatusFilter('all')
+                    } else if (names.includes('admin')) {
+                        setStatusFilter('active')
+                    }
+                } catch {
+                    // fallback: if getCurrentUser included roles, still handle it
+                    const roleNames = me.roles?.map(r => (r.role || '').toLowerCase()) ?? []
+                    if (roleNames.includes('admingroup')) {
+                        setStatusFilter('all')
+                    } else if (roleNames.includes('admin')) {
+                        setStatusFilter('active')
+                    }
+                }
+            } catch {
+                // ignore errors and keep existing default
+            }
+        })()
+        return () => { mounted = false }
+    }, [])
 
     const [editingId, setEditingId] = useState<number | null>(null)
     const [currentUser, setCurrentUser] = useState<User | null>(null)
@@ -121,7 +154,7 @@ export default function UsersTab({
 
     return (
         <div>
-            <AdminActions onCreate={startCreate} onRefresh={refresh} loading={loading} />
+            {/* AdminActions moved into UsersTable */}
 
             {error && <div className="alert alert-danger" role="alert">{error}</div>}
 
@@ -166,6 +199,9 @@ export default function UsersTab({
                 tierFilter={tierFilter}
                 onTierFilterChange={setTierFilter}
                 imageBustToken={imageBustToken}
+                onCreate={startCreate}
+                onRefresh={refresh}
+                loading={loading}
             />
         </div>
     )

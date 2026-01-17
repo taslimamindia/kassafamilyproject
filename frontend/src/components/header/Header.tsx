@@ -8,6 +8,8 @@ import { getRolesForUser } from '@src/services/roleAttributions'
 import LanguageSwitcher from '@components/common/LanguageSwitcher'
 import Notifications from '@components/notifications/Notification'
 import i18n from '@src/i18n'
+import { getRoleLabel } from '@src/constants/roleLabels'
+
 
 // Localized dictionary for this component (decentralized)
 const headerResources = {
@@ -137,13 +139,12 @@ function Header() {
                     <ul className="navbar-nav ms-lg-auto mb-2 mb-lg-0 gap-lg-2 align-items-lg-center">
                         {isAuth && (
                             <>
-
-                                <li className="nav-item">
+                                {/* <li className="nav-item">
                                     <NavLink to="/user" className={({ isActive }) => `nav-link d-flex align-items-center gap-2 ${isActive ? 'active' : ''}`}>
                                         <i className="bi bi-house-heart" aria-hidden="true"></i>
                                         {t('nav.users')}
                                     </NavLink>
-                                </li>
+                                </li> */}
                                 <li className="nav-item">
                                     <NavLink to="/tree" className={({ isActive }) => `nav-link d-flex align-items-center gap-2 ${isActive ? 'active' : ''}`}>
                                         <i className="bi bi-people" aria-hidden="true"></i>
@@ -171,7 +172,7 @@ function Header() {
                             <li className="nav-item">
                                 <NavLink to="/admingroup" className={({ isActive }) => `nav-link d-flex align-items-center gap-2 ${isActive ? 'active' : ''}`}>
                                     <i className="bi bi-people" aria-hidden="true"></i>
-                                    Admin de Groupe
+                                        {getRoleLabel('admingroup')}
                                 </NavLink>
                             </li>
                         )}

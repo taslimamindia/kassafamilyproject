@@ -7,8 +7,8 @@
 }
 
 .logo {
-    height: 4em;
-    padding-top: 1.5em;
+    height: 3em;
+    padding-top: 0.8em;
     will-change: filter;
     transition: filter 300ms;
 }
@@ -24,12 +24,12 @@
 /* Improve collapsed menu spacing on mobile */
 @media (max-width: 991.98px) {
     #mainNavbar .navbar-nav {
-        padding-top: .5rem;
-        padding-bottom: .5rem;
+        padding-top: .2rem;
+        padding-bottom: .2rem;
     }
 
     #mainNavbar .nav-link {
-        padding: .5rem 0;
+        padding: .2rem 0;
     }
 }
 

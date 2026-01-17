@@ -118,8 +118,8 @@ export default function Login() {
     return (
         <div className="container py-5 d-flex justify-content-center align-items-center" style={{ minHeight: '80vh' }}>
             <div className="card shadow-lg border-0 rounded-4" style={{ maxWidth: '400px', width: '100%' }}>
-                <div className="card-body p-4 p-md-5">
-                    <div className="text-center mb-4">
+                <div className="card-body p-2">
+                    <div className="text-center mb-2">
                         <div className="bg-primary bg-opacity-10 text-primary rounded-circle d-inline-flex align-items-center justify-content-center mb-3" style={{ width: '64px', height: '64px' }}>
                             <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" fill="currentColor" className="bi bi-person-fill" viewBox="0 0 16 16">
                                 <path d="M3 14s-1 0-1-1 1-4 6-4 6 3 6 4-1 1-1 1H3zm5-6a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/>
@@ -143,7 +143,7 @@ export default function Login() {
                                 <input
                                     type="text"
                                     className="form-control border-start-0 bg-light"
-                                    placeholder={`${t('common.username')} / ${t('common.email')}`}
+                                    placeholder={`${t('common.username')} / ${t('common.email')} / ${t('common.phone')}`}
                                     value={identifier}
                                     onChange={(e) => setIdentifier(e.target.value)}
                                     required

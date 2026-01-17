@@ -3,6 +3,7 @@ import { updateUserById, getCurrentUser, getUserById, deleteUser, type User } fr
 import { getRolesForUser } from '../../../services/roleAttributions'
 import { getRoles, type Role } from '../../../services/roles'
 import FilterBar from '../../common/FilterBar'
+import AdminActions from './AdminActions'
 import { useTranslation } from 'react-i18next'
 import i18n from '../../../i18n'
 import { getTierLabel, tierOptions } from '../../../constants/contributionTiers'
@@ -252,8 +253,8 @@ function UserCard({ user, isViewerAdmin, imageBustToken, onEdit, onDelete, onHar
                             {(user.roles || []).length > 0 && (
                                 <span className="d-inline-flex align-items-center gap-1" title={(user.roles || []).map(r => r.role).join(', ')}>
                                     {(user.roles || []).map(r => (
-                                                <span key={r.id} className="badge bg-secondary-subtle text-secondary rounded-pill">{getRoleLabel(r.role)}</span>
-                                            ))}
+                                        <span key={r.id} className="badge bg-secondary-subtle text-secondary rounded-pill">{getRoleLabel(r.role)}</span>
+                                    ))}
                                 </span>
                             )}
                             {getTierLabel(user.contribution_tier) && (
@@ -341,6 +342,9 @@ export default function UsersTable({
     tierFilter,
     onTierFilterChange,
     imageBustToken,
+    onCreate,
+    onRefresh,
+    loading,
 }: {
     users: User[]
     onEdit: (user: User) => void
@@ -356,6 +360,9 @@ export default function UsersTable({
     tierFilter: string
     onTierFilterChange: (t: string) => void
     imageBustToken: number
+    onCreate: () => void
+    onRefresh: () => void
+    loading: boolean
 }) {
     const { t } = useTranslation()
     const [error, setError] = useState<string | null>(null)
@@ -374,7 +381,7 @@ export default function UsersTable({
         }).catch(() => {
             // Ignore errors, default to false
         })
-        getRoles().then(rs => { if (mounted) setRoleOptions(rs) }).catch(() => {})
+        getRoles().then(rs => { if (mounted) setRoleOptions(rs) }).catch(() => { })
         return () => { mounted = false }
     }, [])
 
@@ -415,12 +422,12 @@ export default function UsersTable({
             const aFirst = (a.firstname || '').toLowerCase()
             const bFirst = (b.firstname || '').toLowerCase()
             if (aFirst !== bFirst) return aFirst.localeCompare(bFirst)
-            
+
             // Tertiary sort: lastname then id
             const aLast = (a.lastname || '').toLowerCase()
             const bLast = (b.lastname || '').toLowerCase()
             if (aLast !== bLast) return aLast.localeCompare(bLast)
-            
+
             // Final sort: by id
             return a.id - b.id
         })
@@ -430,10 +437,23 @@ export default function UsersTable({
         <div>
             {error && <div className="alert alert-danger" role="alert">{error}</div>}
             <div className="container-fluid p-0 mb-3">
-                <div className="d-flex flex-wrap align-items-center gap-2">
-                    <div className="flex-grow-1" style={{ minWidth: '240px', maxWidth: '520px' }}>
-                        <FilterBar value={query} onChange={onQueryChange} placeholder={t('users.searchPlaceholder')} />
+                <div className='row'>
+                    <div className='col-6 d-flex align-items-center'>
+                        <div className="flex-grow-1" style={{ minWidth: '240px' }}>
+                            <FilterBar value={query} onChange={onQueryChange} placeholder={t('users.searchPlaceholder')} />
+                        </div>
                     </div>
+                    <div className='col-6 d-flex align-items-center justify-content-end'>
+                        <AdminActions onCreate={onCreate} onRefresh={onRefresh} loading={loading} />
+                    </div>
+                </div>
+                <div className='row'>
+
+                </div>
+
+
+                <div className="d-flex flex-wrap align-items-center gap-2">
+
                     <div className="btn-toolbar gap-2" role="toolbar" aria-label="filters">
                         <div className="btn-group shadow-sm" role="group" aria-label={t('users.filter.status')}>
                             <input type="radio" className="btn-check" name="status" id="statusAll" autoComplete="off"
@@ -449,19 +469,24 @@ export default function UsersTable({
                             <label className="btn btn-outline-secondary btn-sm" htmlFor="statusInactive"><i className="bi bi-slash-circle me-1"></i>{t('users.filter.inactive')}</label>
                         </div>
 
-                        <div className="btn-group shadow-sm" role="group" aria-label={t('users.filter.firstLogin')}>
-                            <input type="radio" className="btn-check" name="firstLogin" id="flAll" autoComplete="off"
-                                checked={firstLoginFilter === 'all'} onChange={() => onFirstLoginFilterChange('all')} />
-                            <label className="btn btn-outline-secondary btn-sm" htmlFor="flAll"><i className="bi bi-list me-1"></i>{t('users.filter.flAll')}</label>
+                        {isViewerAdmin && (
+                                <div className="btn-group shadow-sm" role="group" aria-label={t('users.filter.firstLogin')}>
+                                    <input type="radio" className="btn-check" name="firstLogin" id="flAll" autoComplete="off"
+                                        checked={firstLoginFilter === 'all'} onChange={() => onFirstLoginFilterChange('all')} />
+                                    <label className="btn btn-outline-secondary btn-sm" htmlFor="flAll"><i className="bi bi-list me-1"></i>{t('users.filter.flAll')}</label>
 
-                            <input type="radio" className="btn-check" name="firstLogin" id="flYes" autoComplete="off"
-                                checked={firstLoginFilter === 'yes'} onChange={() => onFirstLoginFilterChange('yes')} />
-                            <label className="btn btn-outline-warning btn-sm text-dark" htmlFor="flYes"><i className="bi bi-stars me-1"></i>{t('users.filter.flYes')}</label>
+                                    <input type="radio" className="btn-check" name="firstLogin" id="flYes" autoComplete="off"
+                                        checked={firstLoginFilter === 'yes'} onChange={() => onFirstLoginFilterChange('yes')} />
+                                    <label className="btn btn-outline-warning btn-sm text-dark" htmlFor="flYes"><i className="bi bi-stars me-1"></i>{t('users.filter.flYes')}</label>
 
-                            <input type="radio" className="btn-check" name="firstLogin" id="flNo" autoComplete="off"
-                                checked={firstLoginFilter === 'no'} onChange={() => onFirstLoginFilterChange('no')} />
-                            <label className="btn btn-outline-info btn-sm text-dark" htmlFor="flNo"><i className="bi bi-person-check me-1"></i>{t('users.filter.flNo')}</label>
-                        </div>
+                                    <input type="radio" className="btn-check" name="firstLogin" id="flNo" autoComplete="off"
+                                        checked={firstLoginFilter === 'no'} onChange={() => onFirstLoginFilterChange('no')} />
+                                    <label className="btn btn-outline-info btn-sm text-dark" htmlFor="flNo"><i className="bi bi-person-check me-1"></i>{t('users.filter.flNo')}</label>
+                                </div>
+                            )
+                        }
+
+
 
                         <div className="shadow-sm d-flex align-items-center gap-1">
                             <i className="bi bi-person-badge text-muted"></i>

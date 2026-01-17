@@ -12,7 +12,7 @@ const editProfileResources = {
             updateFailed: 'Échec de la mise à jour',
             loadingForm: 'Chargement du formulaire...',
             username: "Nom d'utilisateur",
-            usernameHelp: "Vous ne pouvez pas modifier le nom d'utilisateur.",
+            usernameHelp: "Vous ne pouvez pas modifier ce champ, contactez un administrateur.",
             firstname: 'Prénom',
             lastname: 'Nom',
             email: 'Email',
@@ -31,7 +31,7 @@ const editProfileResources = {
             updateFailed: 'Update failed',
             loadingForm: 'Loading form...',
             username: 'Username',
-            usernameHelp: "You can't change the username.",
+            usernameHelp: "You can't change this field, contact an administrator.",
             firstname: 'First name',
             lastname: 'Last name',
             email: 'Email',
@@ -50,7 +50,7 @@ const editProfileResources = {
             updateFailed: 'فشلت عملية التحديث',
             loadingForm: 'جارٍ تحميل النموذج...',
             username: 'اسم المستخدم',
-            usernameHelp: 'لا يمكنك تغيير اسم المستخدم.',
+            usernameHelp: 'لا يمكنك تغيير هذا الحقل، اتصل بمسؤول.',
             firstname: 'الاسم الأول',
             lastname: 'الاسم الأخير',
             email: 'البريد الإلكتروني',
@@ -155,7 +155,7 @@ export default function EditProfile() {
                         remove_image: form.image_url === null ? true : undefined,
                     })
                 }
-                
+
                 // Mettre à jour le formulaire avec les nouvelles données du serveur (incluant la nouvelle image)
                 setForm({
                     username: updatedUser.username,
@@ -253,7 +253,14 @@ export default function EditProfile() {
                             </div>
                             <div className="col-md-6">
                                 <label className="form-label">{t('profileEdit.birthday')}</label>
-                                <input type="date" className="form-control" value={form.birthday ?? ''} onChange={(e) => updateField('birthday', e.target.value as any)} />
+                                <input type="date"
+                                    className="form-control"
+                                    value={form.birthday ?? ''}
+                                    onChange={(e) => updateField('birthday', e.target.value as any)}
+                                    disabled={!isAdmin}
+                                    required={isAdmin}
+                                />
+                                {!isAdmin && (<div className="form-text">{t('profileEdit.usernameHelp')}</div>)}
                             </div>
                         </div>
                     </div>

@@ -52,6 +52,17 @@ async def mark_message_read(message_id: int, cursor = Depends(get_cursor), curre
     await cursor.commit()
     return {"status": "success"}
 
+@router.put("/messages/read-all")
+async def mark_all_messages_read(cursor = Depends(get_cursor), current_user: dict = Depends(get_current_user)):
+    user_id = current_user["id"]
+    await cursor.execute("""
+        UPDATE messages_recipients 
+        SET isreaded = 1 
+        WHERE receiver_id = %s AND isreaded = 0
+    """, (user_id,))
+    await cursor.commit()
+    return {"status": "success"}
+
 @router.post("/messages")
 async def send_message(msg: MessageCreate, cursor = Depends(get_cursor), current_user: dict = Depends(get_current_user)):
     user_id = current_user["id"]
