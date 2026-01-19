@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import { getUsers, type User, getCurrentUser } from '../../../services/users'
 import { getRolesForUser } from '../../../services/roleAttributions'
-import AddUserForm from './AddUserForm'
-import EditUserForm from './EditUserForm'
-import UsersTable from './UsersTable'
+import AddUserForm from './users/AddUserForm'
+import EditUserForm from './users/EditUserForm'
+import UsersTable from './users/UsersTable'
 import Modal from '../../common/Modal'
 import { useTranslation } from 'react-i18next'
 import i18n from '../../../i18n'
@@ -11,19 +11,19 @@ import i18n from '../../../i18n'
 // Localized dictionary for this component
 const usersTabResources = {
     fr: {
-        users: { loadError: 'Erreur lors du chargement des utilisateurs' },
+        users: { loadError: 'Erreur lors du chargement des membres' },
         common: { create: 'Créer', edit: 'Modifier' },
-        nav: { users: 'Utilisateurs' },
+        nav: { users: 'Membres' },
     },
     en: {
-        users: { loadError: 'Error loading users' },
+        users: { loadError: 'Error loading members' },
         common: { create: 'Create', edit: 'Edit' },
-        nav: { users: 'Users' },
+        nav: { users: 'Members' },
     },
     ar: {
-        users: { loadError: 'خطأ أثناء تحميل المستخدمين' },
+        users: { loadError: 'خطأ أثناء تحميل الأعضاء' },
         common: { create: 'إنشاء', edit: 'تعديل' },
-        nav: { users: 'المستخدمون' },
+        nav: { users: 'الأعضاء' },
     },
 }
 

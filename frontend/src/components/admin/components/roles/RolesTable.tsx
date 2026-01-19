@@ -1,8 +1,8 @@
-import { type Role, deleteRole } from '../../../services/roles'
+import { type Role, deleteRole } from '../../../../services/roles'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import i18n from '../../../i18n'
-import { getRoleLabel } from '../../../constants/roleLabels'
+import i18n from '../../../../i18n'
+import { getRoleLabel } from '../../../../constants/roleLabels'
 
 // Localized dictionary for this component
 const rolesTableResources = {

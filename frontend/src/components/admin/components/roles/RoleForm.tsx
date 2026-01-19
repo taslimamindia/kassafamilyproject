@@ -1,7 +1,7 @@
 import { useState } from 'react'
-import { createRole, updateRole, type Role } from '../../../services/roles'
+import { createRole, updateRole, type Role } from '../../../../services/roles'
 import { useTranslation } from 'react-i18next'
-import i18n from '../../../i18n'
+import i18n from '../../../../i18n'
 
 // Localized dictionary for this component (decentralized)
 const roleFormResources = {

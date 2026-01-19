@@ -1,8 +1,8 @@
 import { useMemo } from 'react'
-import type { RoleAttribution } from '../../../services/roleAttributions'
+import type { RoleAttribution } from '../../../../services/roleAttributions'
 import { useTranslation } from 'react-i18next'
-import i18n from '../../../i18n'
-import { getRoleLabel } from '../../../constants/roleLabels'
+import i18n from '../../../../i18n'
+import { getRoleLabel } from '../../../../constants/roleLabels'
 // Localized dictionary for this component
 const roleAssignmentsResources = {
     fr: { roles: { assignmentsTitle: 'Utilisateurs par Rôle', noAssignments: 'Aucune attribution de rôle trouvée.' }, common: { none: 'Aucun' } },
