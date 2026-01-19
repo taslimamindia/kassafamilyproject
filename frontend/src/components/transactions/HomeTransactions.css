@@ -1,0 +1,79 @@
+.status-pending{background:#f0ad4e; color: #fff;}
+.status-partially_approved{background:#5bc0de; color: #fff;}
+.status-validated{background:#5cb85c; color: #fff;}
+.status-rejected{background:#d9534f; color: #fff;}
+.status-saved{background:#6c757d; color: #fff;}
+
+.filter-card {
+    border-radius: 16px;
+    background: #ffffff;
+    border: none;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.05);
+    transition: all 0.3s ease;
+    overflow: hidden;
+    position: relative;
+    margin-bottom: 2rem !important;
+}
+
+.filter-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 4px;
+    background: linear-gradient(90deg, #4facfe 0%, #00f2fe 100%);
+}
+
+.filter-card:hover {
+    box-shadow: 0 15px 35px rgba(0,0,0,0.1);
+    transform: translateY(-2px);
+}
+
+.filter-card .form-label {
+    color: #8898aa;
+    text-transform: uppercase;
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    margin-bottom: 0.5rem;
+}
+
+.filter-card .form-control,
+.filter-card .form-select {
+    border-radius: 8px;
+    border: 1px solid transparent;
+    padding: 0.6rem 1rem;
+    font-size: 0.9rem;
+    color: #525f7f;
+    background-color: #eff2f7;
+    transition: all 0.2s;
+    font-weight: 500;
+}
+
+.filter-card .form-control:hover,
+.filter-card .form-select:hover {
+    background-color: #e2e6ea;
+}
+
+.filter-card .form-control:focus,
+.filter-card .form-select:focus,
+.filter-card .btn:focus {
+    background-color: #fff;
+    border-color: #4facfe;
+    box-shadow: 0 0 0 3px rgba(79, 172, 254, 0.15);
+}
+
+.filter-card .btn {
+    border-radius: 8px;
+    transition: all 0.2s;
+}
+
+.filter-card .btn:hover {
+    transform: translateY(-1px);
+}
+
+.filter-card .card-title {
+    color: #32325d;
+    font-weight: 600;
+}
