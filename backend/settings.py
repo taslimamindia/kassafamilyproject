@@ -27,6 +27,8 @@ class Settings:
         self.db_pass = os.getenv("BACKEND_LOCAL_DB_PASS")
         self.db_name = os.getenv("BACKEND_LOCAL_DB_NAME")
         self.db_port = int(os.getenv("BACKEND_LOCAL_DB_PORT", "3306"))
+        # Optional: connection pool size for MySQL
+        self.db_pool_size = int(os.getenv("BACKEND_DB_POOL_SIZE", "15"))
 
         # Optional: route DB via SSH tunnel (e.g., Lightsail with PEM)
         self.db_via_ssh = str(os.getenv("BACKEND_DB_VIA_SSH", "false")).strip().lower() in {"1", "true", "yes"}

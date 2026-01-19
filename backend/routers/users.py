@@ -58,8 +58,10 @@ async def get_user_by_id(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
         )
-    # Authorization: admin can view any; admingroup can view only within same father/mother group; others forbidden
-    if not await has_role(cursor, current_user["id"], "admin"):
+    # Authorization: admin and treasury can view any; admingroup can view only within same father/mother group; others forbidden
+    is_admin = await has_role(cursor, current_user["id"], "admin")
+    is_treasury = await has_role(cursor, current_user["id"], "treasury")
+    if not (is_admin or is_treasury):
         if await has_role(cursor, current_user["id"], "admingroup"):
             fid = current_user.get("id_father")
             mid = current_user.get("id_mother")
@@ -92,8 +94,9 @@ async def get_members(
     cursor=Depends(get_cursor),
     current_user: dict = Depends(get_current_user),
 ):
-    # Admin sees all; group admin sees only users sharing same father or same mother; include the parents themselves as well
+    # Admin and treasury see all; group admin sees only users sharing same father or same mother; include the parents themselves as well
     is_admin = await has_role(cursor, current_user["id"], "admin")
+    is_treasury = await has_role(cursor, current_user["id"], "treasury")
     is_group_admin = await has_role(cursor, current_user["id"], "admingroup")
 
     # Query filters: status (active/inactive/all), first_login (yes/no/all), q (search)
@@ -166,7 +169,7 @@ async def get_members(
                 extra_where.append(f"u.{key} = %s")
                 extra_vals.append(val)
 
-    if is_admin:
+    if is_admin or is_treasury:
         base_sql = """
             SELECT u.*, r.id AS role_id, r.role AS role_name
             FROM users u
@@ -306,6 +309,20 @@ async def create_user(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Le père et la mère doivent être différents",
         )
+
+    # If birthday provided and user is minor, force account inactive
+    if body.birthday:
+        try:
+            bd = datetime.fromisoformat(str(body.birthday))
+        except Exception:
+            try:
+                bd = datetime.strptime(str(body.birthday), "%Y-%m-%d")
+            except Exception:
+                bd = None
+        if bd:
+            age = int((datetime.now() - bd).days / 365.25)
+            if age < 18:
+                body.isactive = 0
 
     default_hashed = hash_password(settings.user_password_default)
     # Authorization for creation: admin anytime; group admin only within their group; others forbidden
@@ -556,6 +573,27 @@ async def update_user_by_id(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Le père et la mère doivent être différents",
         )
+
+    # Ensure that if resulting birthday makes the user a minor, the account cannot be active
+    final_birthday = None
+    if body.birthday is not None:
+        final_birthday = body.birthday
+    else:
+        final_birthday = row_curr.get("birthday")
+
+    if final_birthday:
+        try:
+            bd = datetime.fromisoformat(str(final_birthday))
+        except Exception:
+            try:
+                bd = datetime.strptime(str(final_birthday), "%Y-%m-%d")
+            except Exception:
+                bd = None
+        if bd:
+            age = int((datetime.now() - bd).days / 365.25)
+            if age < 18:
+                # force inactive
+                body.isactive = 0
 
     if remove_image_flag:
         old_url = row_curr.get("image_url")
