@@ -13,6 +13,28 @@ import asyncio
 router = APIRouter()
 logger = logging.getLogger("auth")
 
+async def check_majority(user: dict):
+        # Block minors (age < 18)
+    bd_raw = user.get("birthday")
+    if bd_raw:
+        try:
+            try:
+                bd = datetime.fromisoformat(str(bd_raw))
+            except Exception:
+                try:
+                    bd = datetime.strptime(str(bd_raw), "%Y-%m-%d")
+                except Exception:
+                    bd = None
+            if bd:
+                age = int((datetime.now() - bd).days / 365.25)
+                if age < 18:
+                    raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Vous devez être majeur pour vous connecter.")
+        except HTTPException:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Informations de connexion incorrectes")
+        except Exception:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Informations de connexion incorrectes")
+
+
 @router.post("/login", response_model=TokenResponse)
 async def login(request: Request, cursor = Depends(get_cursor)):
     identifier: Optional[str] = None
@@ -73,6 +95,9 @@ async def login(request: Request, cursor = Depends(get_cursor)):
     if await has_role(cursor, user["id"], "norole") and username.lower() != "norole":
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Informations de connexion incorrectes")
 
+    # Block minors as well
+    await check_majority(user)
+    
     # Require password change on first login
     is_first_login = user.get("isfirstlogin")
     try:
@@ -141,6 +166,13 @@ async def change_password_first_login(request: Request, cursor = Depends(get_cur
         is_active = 0
     if is_active != 1:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Informations de connexion incorrectes")
+
+    # Block users with role 'norole' (do not allow password change flow)
+    if await has_role(cursor, user["id"], "norole"):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Informations de connexion incorrectes")
+
+    # Block minors as well
+    await check_majority(user)
 
     # Verify old (current) password
     if not verify_password(old_password, user.get("password", "")):
