@@ -22,6 +22,9 @@ import HomeUser from './components/user/HomeUser'
 import Tree from './components/familytree/Tree'
 import HomeChartes from './components/chartes/HomeChartes'
 import FloatingChatButton from './components/notifications/FloatingChatButton'
+import HomeTransactions from './components/transactions/HomeTransactions'
+import AddTransaction from './components/transactions/add/AddTransaction'
+import UpdateTransaction from './components/transactions/update/UpdateTransaction'
 
 function App() {
   return (
@@ -33,13 +36,13 @@ function App() {
           <Routes>
             <Route path="/" element={<Home />} />
             <Route path="/chartes" element={<HomeChartes />} />
-            <Route 
-              path="/tree" 
+            <Route
+              path="/tree"
               element={
                 <ProtectedRoute>
                   <Tree />
                 </ProtectedRoute>
-              } 
+              }
             />
             <Route path="/auth" element={<Login />} />
             <Route path="/change-password" element={<ChangePasswordFirstLogin />} />
@@ -85,6 +88,30 @@ function App() {
                 <ProtectedRoute>
                   <HomeUser />
                 </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/transactions"
+              element={
+                <ProtectedRoute>
+                  <HomeTransactions />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/transactions/add"
+              element={
+                <AdminGroupRoute>
+                  <AddTransaction />
+                </AdminGroupRoute>
+              }
+            />
+            <Route
+              path="/transactions/:id/edit"
+              element={
+                <AdminGroupRoute>
+                  <UpdateTransaction />
+                </AdminGroupRoute>
               }
             />
             <Route path="*" element={<Navigate to="/errors" replace />} />

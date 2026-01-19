@@ -17,7 +17,6 @@ export default function Modal({
     onClose,
     children,
     size,
-    title,
 }: {
     isOpen: boolean
     onClose: () => void
@@ -53,7 +52,6 @@ export default function Modal({
                 <div className={dialogClass} onClick={e => e.stopPropagation()}>
                     <div className="modal-content">
                         <div className="modal-header">
-                            {title && <h5 className="modal-title">{title}</h5>}
                             <button type="button" className="btn-close" aria-label={t('common.close')} onClick={onClose}></button>
                         </div>
                         <div className="modal-body">

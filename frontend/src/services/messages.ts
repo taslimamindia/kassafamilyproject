@@ -22,6 +22,12 @@ export async function markMessageRead(id: number) {
     return res.json()
 }
 
+export async function markAllMessagesRead() {
+    const res = await apiFetch('/messages/read-all', { method: 'PUT' })
+    if (!res.ok) throw new Error('Failed to mark all as read')
+    return res.json()
+}
+
 export type MessageCreate = {
     message: string
     recipient_type: 'support' | 'board' | 'treasury' | 'member'

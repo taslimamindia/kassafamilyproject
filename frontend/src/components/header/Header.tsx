@@ -25,8 +25,10 @@ const headerResources = {
             profile: 'Profil',
             admin: 'Admin',
             users: 'Utilisateurs',
+            cash: 'Caisse',
             tree: 'Arbre généalogique',
             chartes: 'Chartes',
+            home: 'Accueil',
         },
     },
     en: {
@@ -41,8 +43,10 @@ const headerResources = {
             profile: 'Profile',
             admin: 'Admin',
             users: 'Users',
+            cash: 'Cash',
             tree: 'Family Tree',
             chartes: 'Charter',
+            home: 'Home',
         },
     },
     ar: {
@@ -57,8 +61,10 @@ const headerResources = {
             profile: 'الملف الشخصي',
             admin: 'المشرف',
             users: 'المستخدمون',
+            cash: 'الصندوق',
             tree: 'الشجرة العائلية',
             chartes: 'الميثاق',
+            home: 'الصفحة الرئيسية',
         },
     },
 }
@@ -137,14 +143,39 @@ function Header() {
                 </button>
                 <div className="collapse navbar-collapse" id="mainNavbar">
                     <ul className="navbar-nav ms-lg-auto mb-2 mb-lg-0 gap-lg-2 align-items-lg-center">
+                        <li className='nav-item'>
+                            <NavLink to="/" className={({ isActive }) => `nav-link d-flex align-items-center gap-2 ${isActive ? 'active' : ''}`}>
+                                <i className="bi bi-house-door" aria-hidden="true"></i>
+                                {t('nav.home')}
+                            </NavLink>
+                        </li>
+                        
+                        {isAuth && isAdmin && (
+                            <li className="nav-item">
+                                <NavLink to="/admin" className={({ isActive }) => `nav-link d-flex align-items-center gap-2 ${isActive ? 'active' : ''}`}>
+                                    <i className="bi bi-shield-lock" aria-hidden="true"></i>
+                                    {t('nav.admin')}
+                                </NavLink>
+                            </li>
+                        )}
+                        
+                        {isAuth && isGroupAdmin && !isAdmin && (
+                            <li className="nav-item">
+                                <NavLink to="/admingroup" className={({ isActive }) => `nav-link d-flex align-items-center gap-2 ${isActive ? 'active' : ''}`}>
+                                    <i className="bi bi-people" aria-hidden="true"></i>
+                                    {getRoleLabel('admingroup')}
+                                </NavLink>
+                            </li>
+                        )}
+
                         {isAuth && (
                             <>
-                                {/* <li className="nav-item">
-                                    <NavLink to="/user" className={({ isActive }) => `nav-link d-flex align-items-center gap-2 ${isActive ? 'active' : ''}`}>
-                                        <i className="bi bi-house-heart" aria-hidden="true"></i>
-                                        {t('nav.users')}
+                                <li className="nav-item">
+                                    <NavLink to="/transactions" className={({ isActive }) => `nav-link d-flex align-items-center gap-2 ${isActive ? 'active' : ''}`}>
+                                        <i className="bi bi-cash-coin" aria-hidden="true"></i>
+                                        {t('nav.cash')}
                                     </NavLink>
-                                </li> */}
+                                </li>
                                 <li className="nav-item">
                                     <NavLink to="/tree" className={({ isActive }) => `nav-link d-flex align-items-center gap-2 ${isActive ? 'active' : ''}`}>
                                         <i className="bi bi-people" aria-hidden="true"></i>
@@ -158,23 +189,6 @@ function Header() {
                                     </NavLink>
                                 </li>
                             </>
-                        )}
-
-                        {isAuth && isAdmin && (
-                            <li className="nav-item">
-                                <NavLink to="/admin" className={({ isActive }) => `nav-link d-flex align-items-center gap-2 ${isActive ? 'active' : ''}`}>
-                                    <i className="bi bi-shield-lock" aria-hidden="true"></i>
-                                    {t('nav.admin')}
-                                </NavLink>
-                            </li>
-                        )}
-                        {isAuth && isGroupAdmin && (
-                            <li className="nav-item">
-                                <NavLink to="/admingroup" className={({ isActive }) => `nav-link d-flex align-items-center gap-2 ${isActive ? 'active' : ''}`}>
-                                    <i className="bi bi-people" aria-hidden="true"></i>
-                                        {getRoleLabel('admingroup')}
-                                </NavLink>
-                            </li>
                         )}
 
                         {isAuth === null ? null : isAuth ? (

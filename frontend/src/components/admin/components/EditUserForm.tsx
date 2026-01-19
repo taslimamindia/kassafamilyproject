@@ -200,6 +200,7 @@ export default function EditUserForm({
             ? (Number((initial as any).isfirstlogin) === 1 || (initial as any).isfirstlogin === true)
             : false
     )
+    const [isMinor, setIsMinor] = useState<boolean>(false)
 
     const typingTimer = useRef<number | null>(null)
     const fileInputRef = useRef<HTMLInputElement | null>(null)
@@ -271,6 +272,22 @@ export default function EditUserForm({
             fileInputRef.current.value = ''
         }
     }, [initial?.image_url])
+
+    useEffect(() => {
+        const bd = form.birthday ? new Date(String(form.birthday)) : null
+        if (bd && !isNaN(bd.getTime())) {
+            const age = Math.floor((Date.now() - bd.getTime()) / (365.25 * 24 * 60 * 60 * 1000))
+            if (age < 18) {
+                setIsMinor(true)
+                setIsActive(false)
+                setIsFirstLogin(true)
+            } else {
+                setIsMinor(false)
+            }
+        } else {
+            setIsMinor(false)
+        }
+    }, [form.birthday])
 
     function isValidEmail(val?: string | null): boolean {
         if (!val) return true
@@ -425,7 +442,7 @@ export default function EditUserForm({
                 contribution_tier: (form as any).contribution_tier ?? undefined,
                 id_father: fatherId ?? undefined,
                 id_mother: motherId ?? undefined,
-                isactive: isActive ? 1 : 0,
+                isactive: (isMinor ? 0 : (isActive ? 1 : 0)),
                 isfirstlogin: isFirstLogin ? 1 : 0,
             }
             if (imageFile) {
@@ -444,6 +461,9 @@ export default function EditUserForm({
             const current = await getRolesForUser(id)
             let currentIds = new Set(current.map(r => r.id))
             let desiredIds = new Set(selectedRoleIds)
+            // ensure backend 'user' role is always present
+            const userRole = allRoles.find(r => String(r.role).toLowerCase() === 'user')
+            if (userRole) desiredIds.add(userRole.id)
             if (allowedRoleNames && allowedRoleNames.length > 0) {
                 const allowedIds = new Set(
                     allRoles
@@ -561,7 +581,7 @@ export default function EditUserForm({
 
                         <div className="card bg-light border-0 rounded-3 p-3 mb-3">
                             <div className="form-check form-switch mb-2">
-                                <input className="form-check-input" type="checkbox" id="is-active" checked={isActive} onChange={e => setIsActive(e.target.checked)} />
+                                <input className="form-check-input" type="checkbox" id="is-active" checked={isActive} onChange={e => setIsActive(e.target.checked)} disabled={isMinor} />
                                 <div className="d-flex justify-content-between align-items-center">
                                     <label className="form-check-label fw-semibold" htmlFor="is-active">{t('userForm.labels.activeAccount')}</label>
                                     <i className="bi bi-info-circle text-muted" onClick={() => setHelpKey('isactive')} style={{ cursor: 'pointer' }}></i>
@@ -570,7 +590,7 @@ export default function EditUserForm({
                             </div>
                             <hr className="my-2" />
                             <div className="form-check form-switch">
-                                <input className="form-check-input" type="checkbox" id="is-first-login" checked={isFirstLogin} onChange={e => setIsFirstLogin(e.target.checked)} />
+                                <input className="form-check-input" type="checkbox" id="is-first-login" checked={isFirstLogin} onChange={e => setIsFirstLogin(e.target.checked)} disabled={isMinor} />
                                 <div className="d-flex justify-content-between align-items-center">
                                     <label className="form-check-label fw-semibold" htmlFor="is-first-login">{t('userForm.labels.firstLogin')}</label>
                                     <i className="bi bi-info-circle text-muted" onClick={() => setHelpKey('isfirstlogin')} style={{ cursor: 'pointer' }}></i>
@@ -721,9 +741,12 @@ export default function EditUserForm({
                                 <i className="bi bi-info-circle text-muted" onClick={() => setHelpKey('roles')} style={{ cursor: 'pointer' }}></i>
                             </div>
                             <div className="d-flex flex-wrap gap-2">
-                                {(allowedRoleNames && allowedRoleNames.length > 0
-                                    ? allRoles.filter(r => allowedRoleNames.map(n => n.toLowerCase()).includes(String(r.role).toLowerCase()))
-                                    : allRoles
+                                {(
+                                    (allowedRoleNames && allowedRoleNames.length > 0
+                                        ? allRoles.filter(r => allowedRoleNames.map(n => n.toLowerCase()).includes(String(r.role).toLowerCase()))
+                                        : allRoles
+                                    )
+                                    .filter(r => String(r.role).toLowerCase() !== 'user')
                                 ).map(role => {
                                     const isSelected = selectedRoleIds.includes(role.id);
                                     return (

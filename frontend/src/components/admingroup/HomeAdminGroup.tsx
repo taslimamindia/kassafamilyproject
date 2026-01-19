@@ -35,7 +35,7 @@ export default function HomeAdminGroup() {
             <div className="d-flex justify-content-between align-items-center mb-2">
                 <h2>{t('admingroup.space')}</h2>
             </div>
-            <UsersTab userFormOptions={{ allowedRoleNames: ['admingroup', 'user'] }} />
+            <UsersTab userFormOptions={{ allowedRoleNames: ['admingroup', 'member', 'norole'] }} />
         </div>
     )
 }

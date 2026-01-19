@@ -190,6 +190,7 @@ export default function AddUserForm({
     const [phone, setPhone] = useState<string | undefined>(initial?.telephone ? String(initial.telephone) : undefined)
     const [isActive, setIsActive] = useState<boolean>(true)
     const [isFirstLogin, setIsFirstLogin] = useState<boolean>(true)
+    const [isMinor, setIsMinor] = useState<boolean>(false)
 
     useEffect(() => {
         async function loadRoles() {
@@ -287,6 +288,23 @@ export default function AddUserForm({
         }
     }, [])
 
+    useEffect(() => {
+        // compute minor status from birthday
+        const bd = form.birthday ? new Date(String(form.birthday)) : null
+        if (bd && !isNaN(bd.getTime())) {
+            const age = Math.floor((Date.now() - bd.getTime()) / (365.25 * 24 * 60 * 60 * 1000))
+            if (age < 18) {
+                setIsMinor(true)
+                setIsActive(false)
+                setIsFirstLogin(true)
+            } else {
+                setIsMinor(false)
+            }
+        } else {
+            setIsMinor(false)
+        }
+    }, [form.birthday])
+
     type HelpKey = 'firstname' | 'lastname' | 'username' | 'email' | 'telephone' | 'birthday' | 'image' | 'gender' | 'contribution_tier' | 'isactive' | 'isfirstlogin' | 'father' | 'mother' | 'roles'
     const [helpKey, setHelpKey] = useState<HelpKey | null>(null)
     const helpText: Record<HelpKey, { title: string; desc: string }> = {
@@ -335,6 +353,7 @@ export default function AddUserForm({
         try {
             let created: User
             if (imageFile) {
+                const isActiveForPayload = isMinor ? false : isActive
                 created = await createUserWithImage({
                     firstname: form.firstname || '',
                     lastname: form.lastname || '',
@@ -346,10 +365,11 @@ export default function AddUserForm({
                     contribution_tier: (form as any).contribution_tier ?? undefined,
                     id_father: fatherId ?? null,
                     id_mother: motherId ?? null,
-                    isactive: isActive ? 1 : 0,
+                    isactive: isActiveForPayload ? 1 : 0,
                     isfirstlogin: isFirstLogin ? 1 : 0,
                 }, imageFile)
             } else {
+                const isActiveForPayload = isMinor ? false : isActive
                 created = await createUser({
                     firstname: form.firstname || '',
                     lastname: form.lastname || '',
@@ -361,7 +381,7 @@ export default function AddUserForm({
                     contribution_tier: (form as any).contribution_tier ?? undefined,
                     id_father: fatherId ?? null,
                     id_mother: motherId ?? null,
-                    isactive: isActive ? 1 : 0,
+                    isactive: isActiveForPayload ? 1 : 0,
                     isfirstlogin: isFirstLogin ? 1 : 0,
                 })
             }
@@ -373,6 +393,11 @@ export default function AddUserForm({
                         .map(r => r.id)
                 )
                 validRoleIds = validRoleIds.filter(id => allowedIds.has(id))
+            }
+            // Always ensure the backend 'user' role is assigned even if hidden from UI
+            const userRole = allRoles.find(r => String(r.role).toLowerCase() === 'user')
+            if (userRole && !validRoleIds.includes(userRole.id)) {
+                validRoleIds.push(userRole.id)
             }
             await Promise.all(validRoleIds.map(rid => assignRoleToUser(created.id, rid)))
             onSaved(created)
@@ -461,8 +486,9 @@ export default function AddUserForm({
                                     className="form-check-input"
                                     type="checkbox"
                                     id="is-active"
-                                    checked={isActive}
-                                    onChange={e => setIsActive(e.target.checked)}
+                                                checked={isActive}
+                                                onChange={e => setIsActive(e.target.checked)}
+                                                disabled={isMinor}
                                 />
                                 <div className="d-flex justify-content-between align-items-center">
                                     <label className="form-check-label fw-semibold" htmlFor="is-active">{t('userForm.labels.activeAccount')}</label>
@@ -478,6 +504,7 @@ export default function AddUserForm({
                                     id="is-first-login"
                                     checked={isFirstLogin}
                                     onChange={e => setIsFirstLogin(e.target.checked)}
+                                    disabled={isMinor}
                                 />
                                 <div className="d-flex justify-content-between align-items-center">
                                     <label className="form-check-label fw-semibold" htmlFor="is-first-login">{t('userForm.labels.firstLogin')}</label>
@@ -657,9 +684,12 @@ export default function AddUserForm({
                             </div>
 
                             <div className="d-flex flex-wrap gap-2">
-                                {(allowedRoleNames && allowedRoleNames.length > 0
-                                    ? allRoles.filter(r => allowedRoleNames.map(n => n.toLowerCase()).includes(String(r.role).toLowerCase()))
-                                    : allRoles
+                                {(
+                                    (allowedRoleNames && allowedRoleNames.length > 0
+                                        ? allRoles.filter(r => allowedRoleNames.map(n => n.toLowerCase()).includes(String(r.role).toLowerCase()))
+                                        : allRoles
+                                    )
+                                    .filter(r => String(r.role).toLowerCase() !== 'user')
                                 ).map(role => {
                                     const isSelected = selectedRoleIds.includes(role.id);
                                     return (
