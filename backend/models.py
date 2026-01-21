@@ -110,6 +110,10 @@ class RoleAttributionBulkCreate(BaseModel):
     users_ids: List[int]
     roles_id: int
 
+class FamilyAssignationBulkCreate(BaseModel):
+    users_ids: List[int]
+    responsable_id: int
+
 class Message(BaseModel):
     id: int
     message: Optional[str] = None
@@ -125,3 +129,14 @@ class MessageCreate(BaseModel):
     recipient_type: str  # 'support', 'board', 'treasury', 'member'
     # For members we can accept a single id or a list of ids
     recipient_id: Optional[Union[int, List[int]]] = None
+
+class UserMinimal(BaseModel):
+    id: int
+    firstname: Optional[str] = None
+    lastname: Optional[str] = None
+    image_url: Optional[str] = None
+
+class MessageUserInfo(BaseModel):
+    message_id: int
+    receiver_id: int
+    sender: UserMinimal

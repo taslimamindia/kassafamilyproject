@@ -7,8 +7,12 @@ from prometheus_client.core import REGISTRY, GaugeMetricFamily
 import psutil
 
 from routers import auth, users, roles, system, messages, transactions
+from routers import admin_db
+from routers import family_assignation as family_assignation_router
 from database import get_db_connection
 from dependencies import ensure_revoked_tokens_table
+from utils import init_users_graph
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -19,7 +23,14 @@ async def lifespan(app: FastAPI):
         try:
             conn.commit()
         except Exception:
-            logging.exception("[lifespan] Commit failed after ensuring revoked_tokens table")
+            logging.exception(
+                "[lifespan] Commit failed after ensuring revoked_tokens table"
+            )
+        # Initialize users graph at startup
+        try:
+            init_users_graph(app)
+        except Exception:
+            logging.exception("[lifespan] Failed to initialize users graph")
         yield
     finally:
         try:
@@ -29,6 +40,7 @@ async def lifespan(app: FastAPI):
                 conn.close()
             except Exception:
                 logging.exception("[lifespan] Failed to close DB connection")
+
 
 app = FastAPI(lifespan=lifespan)
 
@@ -45,15 +57,20 @@ app.add_middleware(
 )
 
 app.include_router(auth.router, prefix="/auth", tags=["Auth"])
-app.include_router(users.router, tags=["Users"]) 
-app.include_router(roles.router, tags=["Roles"]) 
+app.include_router(users.router, tags=["Users"])
+app.include_router(roles.router, tags=["Roles"])
 app.include_router(system.router, tags=["System"])
 app.include_router(messages.router, tags=["Messages"])
-app.include_router(transactions.router, tags=["Transactions"]) 
+app.include_router(transactions.router, tags=["Transactions"])
+app.include_router(family_assignation_router.router, tags=["FamilyAssignations"])
+app.include_router(admin_db.router, tags=["AdminDB"])
 
 # Expose Prometheus metrics at /metrics
 # Standard HTTP endpoint is appropriate for Prometheus scraping and frontend fetches
-Instrumentator().instrument(app).expose(app, endpoint="/metrics", include_in_schema=False)
+Instrumentator().instrument(app).expose(
+    app, endpoint="/metrics", include_in_schema=False
+)
+
 
 # Register custom network I/O metrics using psutil
 class _NetworkCollector:
@@ -64,18 +81,23 @@ class _NetworkCollector:
             logging.exception("[metrics] Failed to read net_io_counters")
             pernic = {}
         bytes_family = GaugeMetricFamily(
-            'system_network_bytes', 'Network I/O bytes (absolute counters)', labels=['interface', 'direction']
+            "system_network_bytes",
+            "Network I/O bytes (absolute counters)",
+            labels=["interface", "direction"],
         )
         packets_family = GaugeMetricFamily(
-            'system_network_packets', 'Network packets (absolute counters)', labels=['interface', 'direction']
+            "system_network_packets",
+            "Network packets (absolute counters)",
+            labels=["interface", "direction"],
         )
         for iface, stat in pernic.items():
-            bytes_family.add_metric([iface, 'recv'], float(stat.bytes_recv))
-            bytes_family.add_metric([iface, 'sent'], float(stat.bytes_sent))
-            packets_family.add_metric([iface, 'recv'], float(stat.packets_recv))
-            packets_family.add_metric([iface, 'sent'], float(stat.packets_sent))
+            bytes_family.add_metric([iface, "recv"], float(stat.bytes_recv))
+            bytes_family.add_metric([iface, "sent"], float(stat.bytes_sent))
+            packets_family.add_metric([iface, "recv"], float(stat.packets_recv))
+            packets_family.add_metric([iface, "sent"], float(stat.packets_sent))
         yield bytes_family
         yield packets_family
+
 
 try:
     REGISTRY.register(_NetworkCollector())
