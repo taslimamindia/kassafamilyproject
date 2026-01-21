@@ -1,10 +1,10 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
-import { getRoles, type Role } from '../../../../services/roles'
-import { getRoleLabel } from '../../../../constants/roleLabels'
-import { getUsers, type User } from '../../../../services/users'
-import { assignRoleToUsersBulk, removeRoleFromUsersBulk } from '../../../../services/roleAttributions'
+import { getRoles, type Role } from '../../../services/roles'
+import { getRoleLabel } from '../../../constants/roleLabels'
+import { getUsers, type User } from '../../../services/users'
+import { assignRoleToUsersBulk, removeRoleFromUsersBulk } from '../../../services/roleAttributions'
 import { useTranslation } from 'react-i18next'
-import i18n from '../../../../i18n'
+import i18n from '../../../i18n'
 
 const roleAttrResources = {
     fr: {
