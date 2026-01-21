@@ -15,7 +15,7 @@ import { getRoleLabel } from '@src/constants/roleLabels'
 const headerResources = {
     fr: {
         header: {
-            userAccount: 'Compte utilisateur',
+            userAccount: 'Compte membre',
             viewProfile: 'Voir le profil',
             editProfile: 'Modifier le profil',
         },
@@ -24,7 +24,7 @@ const headerResources = {
             logout: 'Se déconnecter',
             profile: 'Profil',
             admin: 'Admin',
-            users: 'Utilisateurs',
+            users: 'Membre',
             cash: 'Caisse',
             tree: 'Arbre généalogique',
             chartes: 'Chartes',
@@ -33,7 +33,7 @@ const headerResources = {
     },
     en: {
         header: {
-            userAccount: 'User account',
+            userAccount: 'Member account',
             viewProfile: 'View profile',
             editProfile: 'Edit profile',
         },
@@ -42,7 +42,7 @@ const headerResources = {
             logout: 'Sign out',
             profile: 'Profile',
             admin: 'Admin',
-            users: 'Users',
+            users: 'Member',
             cash: 'Cash',
             tree: 'Family Tree',
             chartes: 'Charter',
@@ -51,7 +51,7 @@ const headerResources = {
     },
     ar: {
         header: {
-            userAccount: 'حساب المستخدم',
+            userAccount: 'حساب العضو',
             viewProfile: 'عرض الملف',
             editProfile: 'تعديل الملف',
         },
@@ -60,7 +60,7 @@ const headerResources = {
             logout: 'تسجيل الخروج',
             profile: 'الملف الشخصي',
             admin: 'المشرف',
-            users: 'المستخدمون',
+            users: 'عضو',
             cash: 'الصندوق',
             tree: 'الشجرة العائلية',
             chartes: 'الميثاق',
@@ -174,14 +174,22 @@ function Header() {
                 >
                     <span className="navbar-toggler-icon"></span>
                 </button>
-                <div className="collapse navbar-collapse" id="mainNavbar">
-                    <ul className="navbar-nav ms-lg-auto mb-2 mb-lg-0 gap-lg-2 align-items-lg-center">
+                <div className="collapse navbar-collapse text-align-right" id="mainNavbar">
+                    <ul className="navbar-nav ms-lg-auto mb-2 mb-lg-0 gap-lg-2 align-items-center">
                         <li className='nav-item'>
                             <NavLink to="/" className={({ isActive }) => `nav-link d-flex align-items-center gap-2 ${isActive ? 'active' : ''}`}>
                                 <i className="bi bi-house-door" aria-hidden="true"></i>
                                 {t('nav.home')}
                             </NavLink>
                         </li>
+                        {isAuth && (
+                            <li className="nav-item">
+                                <NavLink to="/user" className={({ isActive }) => `nav-link d-flex align-items-center gap-2 ${isActive ? 'active' : ''}`}>
+                                    <i className="bi bi-person" aria-hidden="true"></i>
+                                    {t('nav.users')}
+                                </NavLink>
+                            </li>
+                        )}
                         
                         {isAuth && isAdmin && (
                             <li className="nav-item">
