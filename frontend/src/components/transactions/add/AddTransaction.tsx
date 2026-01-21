@@ -19,8 +19,8 @@ export default function AddTransaction({ onSuccess, onCancel }: { onSuccess?: ()
 
     const [users_id, setUsersId] = useState<number | ''>('')
     const [payment_methods_id, setPaymentMethodId] = useState<number | ''>('')
-    const [amount, setAmount] = useState<string>('50000')
-    const [kind, setKind] = useState<TransactionKind>('COTISATION') // default to revenue by contribution
+    const [amount, setAmount] = useState<string>('')
+    const [kind, setKind] = useState<TransactionKind | ''>('') // force explicit selection
     const [me, setMe] = useState<User | null>(null)
     const [proof_reference, setProofReference] = useState<string>('')
     const [proof_file, setProofFile] = useState<File | null>(null)
@@ -45,13 +45,6 @@ export default function AddTransaction({ onSuccess, onCancel }: { onSuccess?: ()
                     // attach roles to current user for downstream logic
                     setMe({ ...current, roles: myRoles as any })
                     setMethods(pms)
-                    // Default payment method: Orange money
-                    const orange = pms.find(pm => (pm.name || '').toLowerCase() === 'orange money' && pm.isactive === 1)
-                    if (orange) {
-                        setPaymentMethodId(orange.id)
-                        // Default proof type to number even if BOTH
-                        setProofType('TRANSACTIONNUMBER')
-                    }
                     if (canChooseMember) {
                         // Load only active members; backend enforces scope by role
                         getUsers({ status: 'active', roles: 'member' })
@@ -70,9 +63,9 @@ export default function AddTransaction({ onSuccess, onCancel }: { onSuccess?: ()
     }, [])
 
     async function submit(sendToTreasury: boolean) {
-        const { transaction_type } = mapKindToBackend(kind)
         const selectedPm = methods.find(m => m.id === Number(payment_methods_id))
         const pmType = (selectedPm?.type_of_proof || 'TRANSACTIONNUMBER') as 'TRANSACTIONNUMBER' | 'LINK' | 'BOTH'
+        
         // Validate proof according to method's type_of_proof and chosen proofType when BOTH
         const isLinkType = pmType === 'LINK' || (pmType === 'BOTH' && proofType === 'LINK')
         const proofOk = isLinkType ? !!proof_file : !!proof_reference
@@ -80,6 +73,7 @@ export default function AddTransaction({ onSuccess, onCancel }: { onSuccess?: ()
             toast.error(t('transactions.add.requiredFields'))
             return
         }
+        const { transaction_type } = mapKindToBackend(kind as TransactionKind)
         setLoading(true)
         try {
             if (isLinkType && proof_file) {
@@ -106,6 +100,7 @@ export default function AddTransaction({ onSuccess, onCancel }: { onSuccess?: ()
             toast.success(t('transactions.add.createdSuccess'))
             if (onSuccess) {
                 onSuccess()
+                navigate('/transactions')
             } else {
                 navigate('/transactions')
             }
@@ -150,9 +145,9 @@ export default function AddTransaction({ onSuccess, onCancel }: { onSuccess?: ()
 
     useEffect(() => {
         if (!allowExpense && kind === 'DEPENSE') {
-            setKind('COTISATION')
+            setKind('')
         }
-    }, [allowExpense])
+    }, [allowExpense, kind])
 
     function getMagnitudeLabel(n: number): string {
         if (!isFinite(n) || n <= 0) return ''
@@ -237,12 +232,19 @@ export default function AddTransaction({ onSuccess, onCancel }: { onSuccess?: ()
                                         <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><path d="M12 12c2.761 0 5-2.239 5-5s-2.239-5-5-5-5 2.239-5 5 2.239 5 5 5zm0 2c-3.866 0-7 2.239-7 5v2h14v-2c0-2.761-3.134-5-7-5z" /></svg>
                                     </span>
                                     {t('transactions.add.member')}
+                                    {me && (
+                                        <span
+                                            className="badge bg-secondary ms-2" role="button"
+                                            title={t('transactions.add.meBadge', 'Moi')}
+                                            onClick={() => setUsersId(me.id)}
+                                        >{t('transactions.add.meBadge', 'Moi')}</span>
+                                    )}
                                     <span className="help-dot" title={t('transactions.add.memberHelp', 'Choisissez le membre concerné')}>
                                         i
                                         <span className="help-tooltip">{t('transactions.add.memberHelp', 'Choisissez le membre concerné')}</span>
                                     </span>
                                 </label>
-                                <select className="form-select" value={users_id} onChange={e => setUsersId(e.target.value ? Number(e.target.value) : '')}>
+                                <select className="form-select" value={users_id} onChange={e => setUsersId(e.target.value ? Number(e.target.value) : '')} required>
                                     <option value="">{t('transactions.add.selectMember')}</option>
                                     {users.map(u => (
                                         <option key={u.id} value={u.id}>{u.firstname} {u.lastname} ({u.username})</option>
@@ -275,6 +277,7 @@ export default function AddTransaction({ onSuccess, onCancel }: { onSuccess?: ()
                                 value={formattedAmount}
                                 onChange={e => handleAmountChange(e.target.value)}
                                 onKeyDown={handleAmountKeyDown}
+                                required
                             />
                             <div className="form-text">{t('transactions.add.currency', 'Devise: Franc Guinéen (GNF)')}</div>
                             {/* Inline formatted hint removed; formatting shown directly in input */}
@@ -292,7 +295,8 @@ export default function AddTransaction({ onSuccess, onCancel }: { onSuccess?: ()
                                     <span className="help-tooltip">{t('transactions.add.typeHelp', 'Choisissez le type de transaction (Cotisation, Dépense, etc.).')}</span>
                                 </span>
                             </label>
-                            <select className="form-select" value={kind} onChange={e => setKind(e.target.value as TransactionKind)}>
+                            <select className="form-select" value={kind} onChange={e => setKind((e.target.value || '') as any)} required>
+                                <option value="">{t('transactions.add.selectType', 'Sélectionnez le type')}</option>
                                 {kindOptions.map(o => (
                                     <option key={o.value} value={o.value}>{o.label}</option>
                                 ))}
@@ -309,7 +313,7 @@ export default function AddTransaction({ onSuccess, onCancel }: { onSuccess?: ()
                                     <span className="help-tooltip">{t('transactions.add.methodHelp', 'Sélectionnez la méthode de paiement (ex: Orange Money)')}</span>
                                 </span>
                             </label>
-                            <select className="form-select" value={payment_methods_id} onChange={e => setPaymentMethodId(e.target.value ? Number(e.target.value) : '')}>
+                            <select className="form-select" value={payment_methods_id} onChange={e => setPaymentMethodId(e.target.value ? Number(e.target.value) : '')} required>
                                 <option value="">{t('transactions.add.selectMethod')}</option>
                                 {pmOptions.map(o => (
                                     <option key={o.value} value={o.value}>{o.label}</option>
@@ -351,12 +355,12 @@ export default function AddTransaction({ onSuccess, onCancel }: { onSuccess?: ()
                                             {proofType === 'LINK' ? (
                                                 <div>
                                                     <label className="form-label">{t('transactions.add.proofReference')}</label>
-                                                    <input type="file" accept="image/*" className="form-control" onChange={e => setProofFile(e.target.files && e.target.files[0] ? e.target.files[0] : null)} />
+                                                    <input type="file" accept="image/*" className="form-control" onChange={e => setProofFile(e.target.files && e.target.files[0] ? e.target.files[0] : null)} required={proofType === 'LINK'} />
                                                 </div>
                                             ) : (
                                                 <div>
                                                     <label className="form-label">{t('transactions.add.proofReference')}</label>
-                                                    <input type="text" className="form-control" value={proof_reference} onChange={e => setProofReference(e.target.value)} />
+                                                    <input type="text" className="form-control" value={proof_reference} onChange={e => setProofReference(e.target.value)} required={proofType === 'TRANSACTIONNUMBER'} />
                                                 </div>
                                             )}
                                         </div>
@@ -365,14 +369,14 @@ export default function AddTransaction({ onSuccess, onCancel }: { onSuccess?: ()
                                     return (
                                         <div>
                                             <label className="form-label">{t('transactions.add.proofReference')}</label>
-                                            <input type="file" accept="image/*" className="form-control" onChange={e => setProofFile(e.target.files && e.target.files[0] ? e.target.files[0] : null)} />
+                                            <input type="file" accept="image/*" className="form-control" onChange={e => setProofFile(e.target.files && e.target.files[0] ? e.target.files[0] : null)} required />
                                         </div>
                                     )
                                 }
                                 return (
                                     <div>
                                         <label className="form-label">{t('transactions.add.proofReference')}</label>
-                                        <input type="text" className="form-control" value={proof_reference} onChange={e => setProofReference(e.target.value)} />
+                                        <input type="text" className="form-control" value={proof_reference} onChange={e => setProofReference(e.target.value)} required />
                                     </div>
                                 )
                             })()}

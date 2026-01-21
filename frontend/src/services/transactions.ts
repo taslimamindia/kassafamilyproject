@@ -17,6 +17,8 @@ export type TransactionApproval = {
     transactions_id: number
     users_id: number
     approved_by_username?: string
+    approved_by_firstname?: string
+    approved_by_lastname?: string
 }
 
 export type Transaction = {
@@ -146,6 +148,20 @@ export async function updateTransactionStatus(id: number, status: Transaction['s
     return (await res.json()) as Transaction
 }
 
+export async function updateTransaction(id: number, partial: {
+    amount?: number
+    proof_reference?: string
+    payment_methods_id?: number
+    transaction_type?: Transaction['transaction_type']
+}): Promise<Transaction> {
+    const res = await apiFetch(`/transactions/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(partial),
+    })
+    if (!res.ok) throw new Error('PATCH /transactions/{id} failed')
+    return (await res.json()) as Transaction
+}
 export async function setTransactionProof(id: number, url: string): Promise<Transaction> {
     const res = await apiFetch(`/transactions/${id}/proof`, {
         method: 'PATCH',
