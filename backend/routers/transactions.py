@@ -455,16 +455,17 @@ async def list_transactions(
     is_admin = "admin" in lowered
     is_treasury = "treasury" in lowered
     is_group_admin = "admingroup" in lowered
-    if not (is_admin or is_treasury or is_group_admin):
-        # Regular members: only their own transactions
-        where.append("t.users_id = %s")
-        vals.append(current_user["id"])
-    elif is_group_admin and not (is_admin or is_treasury):
-        # Group admin: only for assigned users (plus self)
-        where.append(
-            "(t.users_id = %s OR t.users_id IN (SELECT users_assigned_id FROM family_assignation WHERE users_responsable_id = %s))"
-        )
-        vals.extend([current_user["id"], current_user["id"]])
+    if not (is_admin or is_treasury):
+        if is_group_admin:
+            # Group admin: own + assigned + all VALIDATED
+            where.append(
+                "(t.users_id = %s OR t.users_id IN (SELECT users_assigned_id FROM family_assignation WHERE users_responsable_id = %s) OR t.status = 'VALIDATED')"
+            )
+            vals.extend([current_user["id"], current_user["id"]])
+        else:
+            # Regular members: own + all VALIDATED
+            where.append("(t.users_id = %s OR t.status = 'VALIDATED')")
+            vals.append(current_user["id"])
 
     clause = ("WHERE " + " AND ".join(where)) if where else ""
     sql = f"""

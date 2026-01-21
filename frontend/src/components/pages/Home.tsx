@@ -54,10 +54,7 @@ function Home() {
 							{t('home.lead')}
 						</p>
 						<div className="d-flex gap-2">
-							<a href="#" className="btn btn-primary">
-								{t('home.join')}
-							</a>
-							<a href="#" className="btn btn-outline-primary">
+							<a href="/user" className="btn btn-outline-primary">
 								{t('home.learnMore')}
 							</a>
 						</div>

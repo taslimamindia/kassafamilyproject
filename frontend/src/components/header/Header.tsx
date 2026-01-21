@@ -1,6 +1,6 @@
 import './Header.css'
 import { Link, NavLink, useNavigate, useLocation } from 'react-router-dom'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { logout, verifyToken } from '@src/services/auth'
 import { getCurrentUser } from '@src/services/users'
@@ -82,6 +82,37 @@ function Header() {
     const { t } = useTranslation()
     const location = useLocation()
     const isCashActive = location.pathname.startsWith('/caisse') || location.pathname.startsWith('/transactions') || location.pathname.startsWith('/approvals')
+    const navbarRef = useRef<HTMLDivElement>(null)
+
+    useEffect(() => {
+        // Close navbar when clicking outside
+        const handleClickOutside = (event: MouseEvent) => {
+            if (
+                navbarRef.current &&
+                !navbarRef.current.contains(event.target as Node) &&
+                navbarRef.current.classList.contains('show')
+            ) {
+                const toggler = document.querySelector('.navbar-toggler')
+                if (toggler && toggler.contains(event.target as Node)) {
+                    return
+                }
+                if (toggler instanceof HTMLElement) toggler.click()
+            }
+        }
+
+        document.addEventListener('mousedown', handleClickOutside)
+        return () => {
+            document.removeEventListener('mousedown', handleClickOutside)
+        }
+    }, [])
+
+    useEffect(() => {
+        // Close navbar on route change (e.g. clicking a link)
+        if (navbarRef.current && navbarRef.current.classList.contains('show')) {
+            const toggler = document.querySelector('.navbar-toggler') as HTMLElement
+            if (toggler) toggler.click()
+        }
+    }, [location])
 
     useEffect(() => {
         let mounted = true
@@ -174,7 +205,7 @@ function Header() {
                 >
                     <span className="navbar-toggler-icon"></span>
                 </button>
-                <div className="collapse navbar-collapse text-align-right" id="mainNavbar">
+                <div ref={navbarRef} className="collapse navbar-collapse text-align-right" id="mainNavbar">
                     <ul className="navbar-nav ms-lg-auto mb-2 mb-lg-0 gap-lg-2 align-items-center">
                         <li className='nav-item'>
                             <NavLink to="/" className={({ isActive }) => `nav-link d-flex align-items-center gap-2 ${isActive ? 'active' : ''}`}>
