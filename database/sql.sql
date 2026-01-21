@@ -230,6 +230,29 @@ CREATE TABLE IF NOT EXISTS `database_kassa`.`messages_recipients` (
 ENGINE = InnoDB;
 
 
+-- -----------------------------------------------------
+-- Table `database_kassa`.`family_assignation`
+-- -----------------------------------------------------
+CREATE TABLE IF NOT EXISTS `database_kassa`.`family_assignation` (
+  `id` INT NOT NULL,
+  `users_assigned_id` INT NOT NULL,
+  `users_responsable_id` INT NOT NULL,
+  PRIMARY KEY (`id`),
+  INDEX `fk_family_assignation_users1_idx` (`users_assigned_id` ASC) VISIBLE,
+  INDEX `fk_family_assignation_users2_idx` (`users_responsable_id` ASC) VISIBLE,
+  CONSTRAINT `fk_family_assignation_users1`
+    FOREIGN KEY (`users_assigned_id`)
+    REFERENCES `database_kassa`.`users` (`id`)
+    ON DELETE NO ACTION
+    ON UPDATE NO ACTION,
+  CONSTRAINT `fk_family_assignation_users2`
+    FOREIGN KEY (`users_responsable_id`)
+    REFERENCES `database_kassa`.`users` (`id`)
+    ON DELETE NO ACTION
+    ON UPDATE NO ACTION)
+ENGINE = InnoDB;
+
+
 SET SQL_MODE=@OLD_SQL_MODE;
 SET FOREIGN_KEY_CHECKS=@OLD_FOREIGN_KEY_CHECKS;
 SET UNIQUE_CHECKS=@OLD_UNIQUE_CHECKS;
