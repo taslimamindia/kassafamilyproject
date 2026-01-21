@@ -86,7 +86,7 @@ export default function Login() {
                 } else if (names.includes('admingroup')) {
                     navigate('/admingroup', { replace: true })
                 } else if (names.includes('treasury')) {
-                    navigate('/transactions', { replace: true })
+                    navigate('/caisse', { replace: true })
                 } else {
                     navigate('/user', { replace: true })
                 }

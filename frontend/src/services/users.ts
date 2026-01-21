@@ -74,6 +74,10 @@ export async function getUserById(id: number): Promise<User> {
     return getJson<User>(`/users/${id}`)
 }
 
+export async function getParentsByUserId(id: number): Promise<{ father: User | null; mother: User | null }> {
+    return getJson<{ father: User | null; mother: User | null }>(`/users/${id}/parents`)
+}
+
 export async function createUser(user: {
     firstname: string
     lastname: string

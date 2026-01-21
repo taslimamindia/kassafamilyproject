@@ -328,6 +328,15 @@ export default function AddUserForm({
         setError(null)
         setEmailError(null)
         setPhoneError(null)
+        // Require birthday and gender
+        if (!form.birthday || String(form.birthday).trim() === '') {
+            setError(i18n.language === 'fr' ? 'Veuillez renseigner la date de naissance.' : i18n.language === 'ar' ? 'يرجى إدخال تاريخ الميلاد.' : 'Please enter birth date.')
+            return
+        }
+        if (!(form as any).gender || String((form as any).gender).trim() === '') {
+            setError(i18n.language === 'fr' ? 'Veuillez choisir le genre.' : i18n.language === 'ar' ? 'يرجى اختيار الجنس.' : 'Please select gender.')
+            return
+        }
         if (fatherId !== null && motherId !== null && fatherId === motherId) {
             setError(t('userForm.errors.parentsMustBeDifferent'))
             return
@@ -399,7 +408,22 @@ export default function AddUserForm({
             if (userRole && !validRoleIds.includes(userRole.id)) {
                 validRoleIds.push(userRole.id)
             }
-            await Promise.all(validRoleIds.map(rid => assignRoleToUser(created.id, rid)))
+            // If no roles selected, auto-assign 'norole' (if exists) in addition to 'user'
+            if (validRoleIds.length === 0) {
+                const noRole = allRoles.find(r => String(r.role).toLowerCase() === 'norole')
+                if (noRole && !validRoleIds.includes(noRole.id)) {
+                    validRoleIds.push(noRole.id)
+                }
+                // 'user' was already ensured above
+            }
+            // Assign roles; tolerate failures (e.g., permissions) but continue
+            await Promise.all(validRoleIds.map(async rid => {
+                try {
+                    await assignRoleToUser(created.id, rid)
+                } catch (err) {
+                    console.warn('Assign role failed:', rid, err)
+                }
+            }))
             onSaved(created)
         } catch (e) {
             setError(t('userForm.errors.saveError'))
@@ -410,6 +434,7 @@ export default function AddUserForm({
 
     const currentBirthDate = form.birthday ? new Date(String(form.birthday)) : null
     const hasValidDate = (d: Date | null) => !!d && !isNaN(d.getTime())
+    const birthdayReady = hasValidDate(currentBirthDate)
     
     const filterByBirthday = (list: User[]) => list.filter(u => {
         if (hasValidDate(currentBirthDate)) {
@@ -536,12 +561,12 @@ export default function AddUserForm({
                                     </div>
                                 </div>
                                 <div className="col-md-6">
-                                    <label className="form-label small text-muted">{t('userForm.labels.birthday')}</label>
+                                    <label className="form-label small text-muted">{t('userForm.labels.birthday')} <span className="text-danger">*</span></label>
                                     <input type="date" className="form-control" value={form.birthday || ''} onChange={e => setForm(f => ({ ...f, birthday: e.target.value }))} />
                                 </div>
                                 <div className="col-md-6">
                                     <div className="d-flex justify-content-between align-items-center">
-                                        <label className="form-label small text-muted mb-1">{t('userForm.labels.gender')}</label>
+                                        <label className="form-label small text-muted mb-1">{t('userForm.labels.gender')} <span className="text-danger">*</span></label>
                                         <i className="bi bi-info-circle text-muted" onClick={() => setHelpKey('gender')} style={{ cursor: 'pointer' }}></i>
                                     </div>
                                     <div className="d-flex gap-3 align-items-center">
@@ -650,27 +675,47 @@ export default function AddUserForm({
                             <div className="row g-3">
                                 <div className="col-md-6">
                                     <label className="form-label small text-muted">{t('userForm.labels.father')}</label>
-                                    <Select
-                                        isClearable
-                                        classNamePrefix="select"
-                                        options={fatherOptions}
-                                        placeholder={t('userForm.placeholders.selectFather')}
-                                        value={fatherOptions.find(o => o.value === fatherId) ?? null}
-                                        onChange={(opt) => setFatherId(opt ? (opt as { value: number; label: string }).value : null)}
-                                        styles={{ control: (base) => ({ ...base, borderColor: '#dee2e6', boxShadow: 'none' }) }}
-                                    />
+                                    {birthdayReady ? (
+                                        <Select
+                                            isClearable
+                                            classNamePrefix="select"
+                                            options={fatherOptions}
+                                            placeholder={t('userForm.placeholders.selectFather')}
+                                            value={fatherOptions.find(o => o.value === fatherId) ?? null}
+                                            onChange={(opt) => setFatherId(opt ? (opt as { value: number; label: string }).value : null)}
+                                            styles={{ control: (base) => ({ ...base, borderColor: '#dee2e6', boxShadow: 'none' }) }}
+                                        />
+                                    ) : (
+                                        <div className="form-text text-muted">
+                                            {i18n.language === 'fr'
+                                                ? 'Veuillez renseigner la date de naissance pour sélectionner les parents.'
+                                                : i18n.language === 'ar'
+                                                    ? 'الرجاء إدخال تاريخ الميلاد لاختيار الوالدين.'
+                                                    : 'Please enter birth date to select parents.'}
+                                        </div>
+                                    )}
                                 </div>
                                 <div className="col-md-6">
                                     <label className="form-label small text-muted">{t('userForm.labels.mother')}</label>
-                                    <Select
-                                        isClearable
-                                        classNamePrefix="select"
-                                        options={motherOptions}
-                                        placeholder={t('userForm.placeholders.selectMother')}
-                                        value={motherOptions.find(o => o.value === motherId) ?? null}
-                                        onChange={(opt) => setMotherId(opt ? (opt as { value: number; label: string }).value : null)}
-                                        styles={{ control: (base) => ({ ...base, borderColor: '#dee2e6', boxShadow: 'none' }) }}
-                                    />
+                                    {birthdayReady ? (
+                                        <Select
+                                            isClearable
+                                            classNamePrefix="select"
+                                            options={motherOptions}
+                                            placeholder={t('userForm.placeholders.selectMother')}
+                                            value={motherOptions.find(o => o.value === motherId) ?? null}
+                                            onChange={(opt) => setMotherId(opt ? (opt as { value: number; label: string }).value : null)}
+                                            styles={{ control: (base) => ({ ...base, borderColor: '#dee2e6', boxShadow: 'none' }) }}
+                                        />
+                                    ) : (
+                                        <div className="form-text text-muted">
+                                            {i18n.language === 'fr'
+                                                ? 'Veuillez renseigner la date de naissance pour sélectionner les parents.'
+                                                : i18n.language === 'ar'
+                                                    ? 'الرجاء إدخال تاريخ الميلاد لاختيار الوالدين.'
+                                                    : 'Please enter birth date to select parents.'}
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         </div>
@@ -678,7 +723,7 @@ export default function AddUserForm({
                         <div className="mb-4">
                             <div className="d-flex align-items-center justify-content-between mb-3 border-bottom pb-2">
                                 <h6 className="text-uppercase text-secondary fw-bold fs-7 mb-0">
-                                    <i className="bi bi-diagram-3 me-2 text-primary"></i>{t('userForm.sections.roles')}
+                                    <i className="bi bi-diagram-3 me-2 text-primary"></i>{t('userForm.sections.roles')} <span className="text-danger">*</span>
                                 </h6>
                                 <i className="bi bi-info-circle text-muted" onClick={() => setHelpKey('roles')} style={{ cursor: 'pointer' }}></i>
                             </div>

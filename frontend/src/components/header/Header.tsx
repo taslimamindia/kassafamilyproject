@@ -1,5 +1,5 @@
 import './Header.css'
-import { Link, NavLink, useNavigate } from 'react-router-dom'
+import { Link, NavLink, useNavigate, useLocation } from 'react-router-dom'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { logout, verifyToken } from '@src/services/auth'
@@ -78,7 +78,10 @@ function Header() {
     const [isAuth, setIsAuth] = useState<boolean | null>(null)
     const [isAdmin, setIsAdmin] = useState<boolean>(false)
     const [isGroupAdmin, setIsGroupAdmin] = useState<boolean>(false)
+    const [me, setMe] = useState<{ firstname?: string; lastname?: string; image_url?: string | null } | null>(null)
     const { t } = useTranslation()
+    const location = useLocation()
+    const isCashActive = location.pathname.startsWith('/caisse') || location.pathname.startsWith('/transactions') || location.pathname.startsWith('/approvals')
 
     useEffect(() => {
         let mounted = true
@@ -90,6 +93,7 @@ function Header() {
                 if (ok) {
                     try {
                         const user = await getCurrentUser()
+                        setMe({ firstname: user.firstname, lastname: user.lastname, image_url: user.image_url })
                         const roles = await getRolesForUser(user.id)
                         const names = roles.map(r => (r.role || '').toLowerCase())
                         setIsAdmin(names.includes('admin'))
@@ -97,13 +101,15 @@ function Header() {
                     } catch {
                         setIsAdmin(false)
                         setIsGroupAdmin(false)
+                        setMe(null)
                     }
                 } else {
                     setIsAdmin(false)
                     setIsGroupAdmin(false)
+                    setMe(null)
                 }
             } catch {
-                if (mounted) { setIsAuth(false); setIsAdmin(false); setIsGroupAdmin(false) }
+                if (mounted) { setIsAuth(false); setIsAdmin(false); setIsGroupAdmin(false); setMe(null) }
             }
         }
         // Initial check
@@ -122,6 +128,33 @@ function Header() {
     function onLogout() {
         logout()
         navigate('/', { replace: true })
+    }
+
+    function renderAvatar() {
+        const size = 32
+        const style: React.CSSProperties = { width: size, height: size }
+        if (me?.image_url) {
+            return (
+                <img
+                    src={me.image_url}
+                    alt="Avatar"
+                    className="rounded-circle"
+                    style={{ ...style, objectFit: 'cover' }}
+                />
+            )
+        }
+        const first = (me?.firstname || '').trim()
+        const last = (me?.lastname || '').trim()
+        const initials = `${first ? first[0] : ''}${last ? last[0] : ''}`.toUpperCase() || 'U'
+        return (
+            <span
+                className="rounded-circle d-inline-flex align-items-center justify-content-center bg-secondary text-white fw-semibold"
+                style={style}
+                aria-hidden="true"
+            >
+                {initials}
+            </span>
+        )
     }
 
     return (
@@ -171,7 +204,7 @@ function Header() {
                         {isAuth && (
                             <>
                                 <li className="nav-item">
-                                    <NavLink to="/transactions" className={({ isActive }) => `nav-link d-flex align-items-center gap-2 ${isActive ? 'active' : ''}`}>
+                                    <NavLink to="/caisse" className={() => `nav-link d-flex align-items-center gap-2 ${isCashActive ? 'active' : ''}`}>
                                         <i className="bi bi-cash-coin" aria-hidden="true"></i>
                                         {t('nav.cash')}
                                     </NavLink>
@@ -198,9 +231,9 @@ function Header() {
                                     data-bs-toggle="dropdown"
                                     aria-expanded="false"
                                     aria-label={t('header.userAccount')}
+                                    title={`${(me?.firstname || '').trim()} ${(me?.lastname || '').trim()}`.trim() || t('nav.profile')}
                                 >
-                                    <i className="bi bi-person-circle fs-5" aria-hidden="true"></i>
-                                    <span>{t('nav.profile')}</span>
+                                    {renderAvatar()}
                                 </button>
                                 <ul className="dropdown-menu dropdown-menu-end">
                                     <li>

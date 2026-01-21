@@ -22,9 +22,10 @@ import HomeUser from './components/user/HomeUser'
 import Tree from './components/familytree/Tree'
 import HomeChartes from './components/chartes/HomeChartes'
 import FloatingChatButton from './components/notifications/FloatingChatButton'
-import HomeTransactions from './components/transactions/HomeTransactions'
-import AddTransaction from './components/transactions/add/AddTransaction'
-import UpdateTransaction from './components/transactions/update/UpdateTransaction'
+import Transactions from './components/transactions/Transactions'
+import HomeCaisse from './components/transactions/HomeCaisse'
+import TransactionApprovals from './components/transactions/TransactionApprovals'
+import NotificationsPage from './components/notifications/NotificationsPage'
 
 function App() {
   return (
@@ -91,29 +92,40 @@ function App() {
               }
             />
             <Route
-              path="/transactions"
+              path="/caisse"
               element={
                 <ProtectedRoute>
-                  <HomeTransactions />
+                  <HomeCaisse />
                 </ProtectedRoute>
               }
             />
             <Route
-              path="/transactions/add"
+              path="/transactions"
               element={
-                <AdminGroupRoute>
-                  <AddTransaction />
-                </AdminGroupRoute>
+                <ProtectedRoute>
+                  <Transactions />
+                </ProtectedRoute>
               }
             />
             <Route
-              path="/transactions/:id/edit"
+              path="/approvals"
               element={
-                <AdminGroupRoute>
-                  <UpdateTransaction />
-                </AdminGroupRoute>
+                <ProtectedRoute>
+                  <TransactionApprovals />
+                </ProtectedRoute>
               }
             />
+
+            <Route
+              path="/notifications"
+              element={
+                <ProtectedRoute>
+                  <NotificationsPage />
+                </ProtectedRoute>
+              }
+            />
+
+            {/* Add/Update handled via modals inside the Transactions page; routes removed */}
             <Route path="*" element={<Navigate to="/errors" replace />} />
           </Routes>
         </main>

@@ -13,6 +13,10 @@ from utils import (
     parse_update_request,
     generate_username_logic,
     ensure_unique_username,
+    update_users_graph,
+    get_family_ids,
+    get_family_rows,
+    send_notification,
 )
 from auth_utils import hash_password
 from settings import settings
@@ -58,26 +62,25 @@ async def get_user_by_id(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
         )
-    # Authorization: admin and treasury can view any; admingroup can view only within same father/mother group; others forbidden
+    # Authorization: admin and treasury can view any; admingroup can view only assigned members via family_assignation (or self); others forbidden
     is_admin = await has_role(cursor, current_user["id"], "admin")
     is_treasury = await has_role(cursor, current_user["id"], "treasury")
     if not (is_admin or is_treasury):
         if await has_role(cursor, current_user["id"], "admingroup"):
-            fid = current_user.get("id_father")
-            mid = current_user.get("id_mother")
-            same_group = False
-            if fid is not None and (
-                user.get("id_father") == fid or user.get("id") == fid
-            ):
-                same_group = True
-            if mid is not None and (
-                user.get("id_mother") == mid or user.get("id") == mid
-            ):
-                same_group = True
-            if not same_group and user.get("id") != current_user.get("id"):
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden"
+            # Allow if target is current user
+            if int(user.get("id")) != int(current_user.get("id")):
+                # Check assignment in family_assignation
+                await cursor.execute(
+                    """
+                    SELECT 1 FROM family_assignation
+                    WHERE users_responsable_id = %s AND users_assigned_id = %s
+                    """,
+                    (current_user["id"], user_id),
                 )
+                if not await cursor.fetchone():
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden"
+                    )
         else:
             # Regular users cannot view other users by id
             if user.get("id") != current_user.get("id"):
@@ -94,7 +97,7 @@ async def get_members(
     cursor=Depends(get_cursor),
     current_user: dict = Depends(get_current_user),
 ):
-    # Admin and treasury see all; group admin sees only users sharing same father or same mother; include the parents themselves as well
+    # Admin and treasury see all; group admin sees only assigned users via family_assignation (plus themselves)
     is_admin = await has_role(cursor, current_user["id"], "admin")
     is_treasury = await has_role(cursor, current_user["id"], "treasury")
     is_group_admin = await has_role(cursor, current_user["id"], "admingroup")
@@ -181,34 +184,19 @@ async def get_members(
         where_clause = ("WHERE " + " AND ".join(extra_where)) if extra_where else ""
         await cursor.execute(base_sql.format(where=where_clause), tuple(extra_vals))
     elif is_group_admin:
-        fid = current_user.get("id_father")
-        mid = current_user.get("id_mother")
-
-        # For admin group add where conditions to get users createdby himself
+        # Group admin: only users assigned to them via family_assignation, plus themselves
         base_sql = """
             SELECT u.*, r.id AS role_id, r.role AS role_name
             FROM users u
             LEFT JOIN role_attribution ra ON ra.users_id = u.id
             LEFT JOIN roles r ON r.id = ra.roles_id
-            WHERE (
-                (%s IS NOT NULL AND (u.id_father = %s OR u.id = %s))
-                OR (%s IS NOT NULL AND (u.id_mother = %s OR u.id = %s))
-                OR u.id = %s
-                OR u.createdby = %s
-            )
+            LEFT JOIN family_assignation fa ON fa.users_assigned_id = u.id
+            WHERE (fa.users_responsable_id = %s OR u.id = %s)
             {and_extra}
+            ORDER BY u.id, r.id
             """
         and_extra = (" AND " + " AND ".join(extra_where)) if extra_where else ""
-        vals = [
-            fid,
-            fid,
-            fid,
-            mid,
-            mid,
-            mid,
-            current_user.get("id"),
-            current_user.get("id"),
-        ] + extra_vals
+        vals = [current_user.get("id"), current_user.get("id")] + extra_vals
         await cursor.execute(base_sql.format(and_extra=and_extra), tuple(vals))
     else:
         # Regular users see only themselves
@@ -225,6 +213,8 @@ async def get_members(
         await cursor.execute(base_sql.format(and_extra=and_extra), tuple(vals))
 
     rows = await cursor.fetchall()
+
+    # Note: lineage/graph union removed for admingroup; scope now defined solely by family_assignation
     users_by_id = {}
 
     for row in rows:
@@ -399,6 +389,11 @@ async def create_user(
     await cursor.execute(sql, tuple(values))
     try:
         await cursor.commit()
+        # Refresh users graph after DB change
+        try:
+            await update_users_graph(request.app, cursor)
+        except Exception:
+            logger.exception("[users] Failed to refresh users graph after create")
     except Exception as e:
         logger.exception("[users] Commit failed during create_user")
         raise HTTPException(
@@ -407,8 +402,99 @@ async def create_user(
         )
 
     new_id = cursor.lastrowid or next_user_id
+    # Auto-assignments when created by a group admin
+    try:
+        if await has_role(cursor, current_user["id"], "admingroup"):
+            assignments_to_insert = []
+
+            # Check if assignment to current admingroup already exists
+            await cursor.execute(
+                "SELECT 1 FROM family_assignation WHERE users_responsable_id = %s AND users_assigned_id = %s",
+                (current_user["id"], new_id),
+            )
+            exists_self = await cursor.fetchone()
+
+            # Determine next id for family_assignation (schema may not auto-increment)
+            await cursor.execute("SELECT COALESCE(MAX(id), 0) AS max_id FROM family_assignation")
+            row_max = await cursor.fetchone() or {"max_id": 0}
+            next_fa_id = int(row_max.get("max_id") or 0) + 1
+
+            if not exists_self:
+                assignments_to_insert.append((next_fa_id, new_id, int(current_user["id"])))
+                next_fa_id += 1
+
+            # Find co-responsables (role admingroup) who share at least one assigned user with current admingroup
+            await cursor.execute(
+                """
+                SELECT DISTINCT fa2.users_responsable_id AS rid
+                FROM family_assignation fa1
+                JOIN family_assignation fa2 ON fa1.users_assigned_id = fa2.users_assigned_id
+                JOIN role_attribution ra ON ra.users_id = fa2.users_responsable_id
+                JOIN roles r ON r.id = ra.roles_id
+                WHERE fa1.users_responsable_id = %s
+                AND fa2.users_responsable_id <> %s
+                AND r.role = 'admingroup'
+                """,
+                (current_user["id"], current_user["id"]),
+            )
+            co_rows = await cursor.fetchall() or []
+            co_ids = []
+            for r in co_rows:
+                try:
+                    rid = int(r.get("rid") if isinstance(r, dict) else r[0])
+                except Exception:
+                    continue
+                if rid != int(current_user["id"]):
+                    co_ids.append(rid)
+
+            for rid in co_ids:
+                await cursor.execute(
+                    "SELECT 1 FROM family_assignation WHERE users_responsable_id = %s AND users_assigned_id = %s",
+                    (rid, new_id),
+                )
+                if not await cursor.fetchone():
+                    assignments_to_insert.append((next_fa_id, new_id, rid))
+                    next_fa_id += 1
+
+            if assignments_to_insert:
+                try:
+                    await cursor.executemany(
+                        "INSERT INTO family_assignation (id, users_assigned_id, users_responsable_id) VALUES (%s, %s, %s)",
+                        assignments_to_insert,
+                    )
+                    await cursor.commit()
+                except Exception:
+                    logger.exception(
+                        "[users] Failed to auto-assign family_assignation for new user %s",
+                        new_id,
+                    )
+    except Exception:
+        logger.exception(
+            "[users] Unexpected error during admingroup auto-assign for new user %s",
+            new_id,
+        )
     await cursor.execute("SELECT * FROM users WHERE id = %s", (new_id,))
     user = await cursor.fetchone()
+
+    # Notify admins about new user
+    try:
+        await cursor.execute(
+            """
+            SELECT ra.users_id 
+            FROM role_attribution ra
+            JOIN roles r ON r.id = ra.roles_id
+            WHERE r.role = 'admin'
+            """
+        )
+        admin_rows = await cursor.fetchall()
+        admin_ids = [r["users_id"] if isinstance(r, dict) else r[0] for r in admin_rows]
+        
+        user_name = f"{body.firstname} {body.lastname}".strip()
+        msg = f"Un nouvel utilisateur {user_name} a été créé."
+        await send_notification(cursor, admin_ids, msg, sender_id=current_user["id"], link=f"/users/{new_id}")
+    except Exception as e:
+        logger.warning(f"[users] Failed to notify admins about new user: {e}")
+
     if user:
         user.pop("password", None)
     return user
@@ -443,6 +529,10 @@ async def bulk_update_user_tier(
     await cursor.execute(sql, tuple(vals))
     try:
         await cursor.commit()
+        try:
+            await update_users_graph(request.app, cursor)
+        except Exception:
+            logger.exception("[users] Failed to refresh users graph after bulk tier update")
     except Exception as e:
         logger.error(f"Error updating bulk tiers: {e}")
         raise HTTPException(status_code=500, detail="Database error")
@@ -526,24 +616,19 @@ async def update_user_by_id(
         fields.append("contribution_tier = %s")
         values.append(body.contribution_tier)
 
-    # Authorization: admin ok; group admin only if target is in same group; others forbidden
+    # Authorization: admin ok; group admin only if target is assigned via family_assignation (or self); others forbidden
     if not await has_role(cursor, current_user["id"], "admin"):
         if await has_role(cursor, current_user["id"], "admingroup"):
-            fid = current_user.get("id_father")
-            mid = current_user.get("id_mother")
-            same_group = False
-            if fid is not None and (
-                row_curr.get("id_father") == fid or row_curr.get("id") == fid
-            ):
-                same_group = True
-            if mid is not None and (
-                row_curr.get("id_mother") == mid or row_curr.get("id") == mid
-            ):
-                same_group = True
-            if not same_group and row_curr.get("id") != current_user.get("id"):
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden"
+            target_id = int(row_curr.get("id"))
+            if target_id != int(current_user.get("id")):
+                await cursor.execute(
+                    "SELECT 1 FROM family_assignation WHERE users_responsable_id = %s AND users_assigned_id = %s",
+                    (current_user["id"], target_id),
                 )
+                if not await cursor.fetchone():
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden"
+                    )
         else:
             # Regular users can only update themselves via /user
             if row_curr.get("id") != current_user.get("id"):
@@ -656,6 +741,10 @@ async def update_user_by_id(
     await cursor.execute(sql, tuple(values))
     try:
         await cursor.commit()
+        try:
+            await update_users_graph(request.app, cursor)
+        except Exception:
+            logger.exception("[users] Failed to refresh users graph after update")
     except Exception:
         logger.exception("[users] Commit failed during update_user_by_id")
         raise HTTPException(
@@ -674,10 +763,11 @@ async def update_user_by_id(
 async def delete_user_by_id(
     user_id: int,
     hard: bool = False,
+    request: Request = None,
     cursor=Depends(get_cursor),
     current_user: dict = Depends(get_current_user),
 ):
-    # Authorization: admin ok; group admin only if target in same group; others forbidden
+    # Authorization: admin ok; group admin only if target assigned via family_assignation (or self); others forbidden
     await cursor.execute(
         "SELECT id, id_father, id_mother FROM users WHERE id = %s", (user_id,)
     )
@@ -698,21 +788,16 @@ async def delete_user_by_id(
             )
 
         if await has_role(cursor, current_user["id"], "admingroup"):
-            fid = current_user.get("id_father")
-            mid = current_user.get("id_mother")
-            same_group = False
-            if fid is not None and (
-                target.get("id_father") == fid or target.get("id") == fid
-            ):
-                same_group = True
-            if mid is not None and (
-                target.get("id_mother") == mid or target.get("id") == mid
-            ):
-                same_group = True
-            if not same_group and target.get("id") != current_user.get("id"):
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden"
+            target_id = int(target.get("id"))
+            if target_id != int(current_user.get("id")):
+                await cursor.execute(
+                    "SELECT 1 FROM family_assignation WHERE users_responsable_id = %s AND users_assigned_id = %s",
+                    (current_user["id"], target_id),
                 )
+                if not await cursor.fetchone():
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden"
+                    )
         else:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden"
@@ -729,6 +814,11 @@ async def delete_user_by_id(
             )
             await cursor.execute("DELETE FROM users WHERE id = %s", (user_id,))
             await cursor.commit()
+            if request is not None:
+                try:
+                    await update_users_graph(request.app, cursor)
+                except Exception:
+                    logger.exception("[users] Failed to refresh users graph after hard delete")
             return {"status": "deleted", "id": user_id}
         except Exception as e:
             logger.exception("[users] Hard delete failed")
@@ -747,6 +837,11 @@ async def delete_user_by_id(
         )
     try:
         await cursor.commit()
+        if request is not None:
+            try:
+                await update_users_graph(request.app, cursor)
+            except Exception:
+                logger.exception("[users] Failed to refresh users graph after soft delete")
     except Exception:
         logger.exception("[users] Commit failed during delete_user_by_id")
         raise HTTPException(
@@ -757,9 +852,32 @@ async def delete_user_by_id(
 
 
 @router.get("/user")
-async def get_current_user_profile(current_user: dict = Depends(get_current_user)):
+async def get_current_user_profile(
+    cursor=Depends(get_cursor), current_user: dict = Depends(get_current_user)
+):
+    await cursor.execute(
+        """
+        SELECT r.role
+        FROM role_attribution ra
+        JOIN roles r ON ra.roles_id = r.id
+        WHERE ra.users_id = %s
+        """,
+        (current_user["id"],),
+    )
+    rows = await cursor.fetchall() or []
+    roles = []
+    for r in rows:
+        try:
+            if isinstance(r, dict):
+                roles.append({"role": r.get("role")})
+            else:
+                roles.append({"role": r[0]})
+        except Exception:
+            continue
+
     u = dict(current_user)
     u.pop("password", None)
+    u["roles"] = roles
     return u
 
 
@@ -862,6 +980,7 @@ async def get_tree(cursor=Depends(get_cursor)):
 @router.patch("/user")
 async def update_current_user_profile(
     body: UserUpdate,
+    request: Request,
     cursor=Depends(get_cursor),
     current_user: dict = Depends(get_current_user),
 ):
@@ -899,6 +1018,10 @@ async def update_current_user_profile(
     await cursor.execute(sql, tuple(values))
     try:
         await cursor.commit()
+        try:
+            await update_users_graph(request.app, cursor)
+        except Exception:
+            logger.exception("[users] Failed to refresh users graph after current user profile update")
     except Exception:
         logger.exception("[users] Commit failed during update_current_user_profile")
         raise HTTPException(
@@ -910,3 +1033,70 @@ async def update_current_user_profile(
     updated = await cursor.fetchone()
     updated.pop("password", None)
     return updated
+
+
+@router.get("/users/{user_id}/lineage-test")
+async def get_user_lineage_test(
+    user_id: int,
+    request: Request,
+    cursor=Depends(get_cursor),
+):
+    """
+    Temporary test endpoint to inspect computed family lineage from the in-memory graph.
+    Returns only first and last names (no IDs).
+    """
+
+    # Ensure the graph exists; build/refresh if missing
+    app = request.app
+    graph = getattr(app.state, "users_graph", None)
+    if graph is None:
+        try:
+            await update_users_graph(app, cursor)
+            graph = getattr(app.state, "users_graph", None)
+        except Exception:
+            logger.exception("[users] Unable to build users_graph for lineage test")
+    if graph is None:
+        raise HTTPException(status_code=500, detail="Graph not available")
+
+    version = getattr(app.state, "users_graph_version", None)
+    rows = await get_family_rows(cursor, graph, user_id)
+    names = [
+        {"firstname": r.get("firstname"), "lastname": r.get("lastname")} for r in rows
+    ]
+    return {"version": version, "count": len(names), "names": names}
+
+
+@router.get("/users/{user_id}/parents")
+async def get_parents_by_user_id(
+    user_id: int,
+    cursor=Depends(get_cursor),
+):
+    """
+    Public endpoint: returns father and mother for a given user id in a single call.
+    Response: { father: User | null, mother: User | null }
+    """
+    await cursor.execute("SELECT id_father, id_mother FROM users WHERE id = %s", (user_id,))
+    row = await cursor.fetchone()
+    if not row:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    fid = row.get("id_father") if isinstance(row, dict) else row[0]
+    mid = row.get("id_mother") if isinstance(row, dict) else row[1]
+
+    father = None
+    mother = None
+
+    if fid is not None:
+        await cursor.execute("SELECT * FROM users WHERE id = %s", (fid,))
+        f = await cursor.fetchone()
+        if f:
+            f.pop("password", None)
+            father = f
+    if mid is not None:
+        await cursor.execute("SELECT * FROM users WHERE id = %s", (mid,))
+        m = await cursor.fetchone()
+        if m:
+            m.pop("password", None)
+            mother = m
+
+    return {"father": father, "mother": mother}

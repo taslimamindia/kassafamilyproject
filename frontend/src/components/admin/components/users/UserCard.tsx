@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { getUserById, type User } from '../../../../services/users'
+import { getParentsByUserId, type User } from '../../../../services/users'
 import { getTierLabel } from '../../../../constants/contributionTiers'
 import { getRoleLabel } from '../../../../constants/roleLabels'
 import './UserCard.css'
@@ -34,14 +34,8 @@ export default function UserCard({ user, isViewerAdmin, imageBustToken, onEdit, 
         if (next && !parents) {
             setParentsLoading(true)
             try {
-                const fetchFather = typeof (user as any).id_father !== 'undefined' && (user as any).id_father !== null
-                    ? getUserById((user as any).id_father).catch(() => null)
-                    : Promise.resolve(null)
-                const fetchMother = typeof (user as any).id_mother !== 'undefined' && (user as any).id_mother !== null
-                    ? getUserById((user as any).id_mother).catch(() => null)
-                    : Promise.resolve(null)
-                const [father, mother] = await Promise.all([fetchFather, fetchMother])
-                setParents({ father, mother })
+                const res = await getParentsByUserId(user.id)
+                setParents({ father: res.father, mother: res.mother })
             } finally {
                 setParentsLoading(false)
             }
