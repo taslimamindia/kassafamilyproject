@@ -2,9 +2,6 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import logging
 from contextlib import asynccontextmanager
-from prometheus_fastapi_instrumentator import Instrumentator
-from prometheus_client.core import REGISTRY, GaugeMetricFamily
-import psutil
 
 from routers import auth, users, roles, system, messages, transactions
 from routers import admin_db
@@ -64,43 +61,3 @@ app.include_router(messages.router, tags=["Messages"])
 app.include_router(transactions.router, tags=["Transactions"])
 app.include_router(family_assignation_router.router, tags=["FamilyAssignations"])
 app.include_router(admin_db.router, tags=["AdminDB"])
-
-# Expose Prometheus metrics at /metrics
-# Standard HTTP endpoint is appropriate for Prometheus scraping and frontend fetches
-Instrumentator().instrument(app).expose(
-    app, endpoint="/metrics", include_in_schema=False
-)
-
-
-# Register custom network I/O metrics using psutil
-class _NetworkCollector:
-    def collect(self):
-        try:
-            pernic = psutil.net_io_counters(pernic=True)
-        except Exception:
-            logging.exception("[metrics] Failed to read net_io_counters")
-            pernic = {}
-        bytes_family = GaugeMetricFamily(
-            "system_network_bytes",
-            "Network I/O bytes (absolute counters)",
-            labels=["interface", "direction"],
-        )
-        packets_family = GaugeMetricFamily(
-            "system_network_packets",
-            "Network packets (absolute counters)",
-            labels=["interface", "direction"],
-        )
-        for iface, stat in pernic.items():
-            bytes_family.add_metric([iface, "recv"], float(stat.bytes_recv))
-            bytes_family.add_metric([iface, "sent"], float(stat.bytes_sent))
-            packets_family.add_metric([iface, "recv"], float(stat.packets_recv))
-            packets_family.add_metric([iface, "sent"], float(stat.packets_sent))
-        yield bytes_family
-        yield packets_family
-
-
-try:
-    REGISTRY.register(_NetworkCollector())
-except ValueError:
-    # Already registered
-    pass

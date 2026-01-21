@@ -12,5 +12,4 @@ boto3
 psutil
 sshtunnel
 paramiko<3
-prometheus-fastapi-instrumentator
 networkx
