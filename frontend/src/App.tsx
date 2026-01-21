@@ -66,7 +66,11 @@ function App() {
               }
             />
 
-            <Route path="/errors" element={<Errors />} />
+            <Route
+              path="/errors"
+              element={<Errors />}
+            />
+            
             <Route
               path="/admin"
               element={

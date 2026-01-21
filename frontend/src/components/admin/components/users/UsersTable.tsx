@@ -278,19 +278,15 @@ export default function UsersTable({
             {error && <div className="alert alert-danger" role="alert">{error}</div>}
             <div className="container-fluid p-0 mb-3">
                 <div className='row'>
-                    <div className='col-6 d-flex align-items-center'>
+                    <div className='col-12 col-md-6 d-flex align-items-center'>
                         <div className="flex-grow-1" style={{ minWidth: '240px' }}>
                             <FilterBar value={query} onChange={onQueryChange} placeholder={t('users.searchPlaceholder')} />
                         </div>
                     </div>
-                    <div className='col-6 d-flex align-items-center justify-content-end'>
+                    <div className='col-12 col-md-6 d-flex align-items-center justify-content-end'>
                         <AdminActions onCreate={onCreate} onRefresh={onRefresh} loading={loading} />
                     </div>
                 </div>
-                <div className='row'>
-
-                </div>
-
 
                 <div className="d-flex flex-wrap align-items-center gap-2">
 

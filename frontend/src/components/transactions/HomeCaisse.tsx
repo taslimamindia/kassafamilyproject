@@ -330,7 +330,7 @@ export default function HomeCaisse() {
     }, [txs, filter, t])
 
     const [showAdd, setShowAdd] = useState(false)
-    const canAdd = !!user?.roles?.some(r => ['admin', 'admingroup', 'treasury'].includes((r.role || '').toLowerCase()))
+    const canAdd = !!user?.roles?.some(r => ['admin', 'admingroup', 'treasury', 'member'].includes((r.role || '').toLowerCase()))
 
     return (
         <>
