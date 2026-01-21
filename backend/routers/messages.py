@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import List, Optional
 from datetime import datetime
 from dependencies import get_cursor, get_current_user
-from models import Message, MessageCreate
+from models import Message, MessageCreate, MessageUserInfo
 
 router = APIRouter()
 
@@ -131,3 +131,47 @@ async def send_message(msg: MessageCreate, cursor = Depends(get_cursor), current
     
     await cursor.commit()
     return {"status": "success", "count": len(target_users_ids)}
+
+
+@router.get("/messages/{message_id}/user-info", response_model=MessageUserInfo)
+async def get_user_message_info(message_id: int, cursor = Depends(get_cursor), current_user: dict = Depends(get_current_user)):
+    """Return minimal sender info for a message the current user received.
+
+    Requires authentication and that the current user is the receiver for the given message.
+    """
+    user_id = current_user["id"]
+    # Ensure the message belongs to current user as receiver and get sender
+    await cursor.execute(
+        """
+        SELECT sender_id, receiver_id
+        FROM messages_recipients
+        WHERE messages_id = %s AND receiver_id = %s
+        """,
+        (message_id, user_id),
+    )
+    rec = await cursor.fetchone()
+    if not rec:
+        # Either message doesn't exist or not addressed to this user
+        raise HTTPException(status_code=403, detail="Not authorized for this message")
+
+    sender_id = rec["sender_id"]
+    receiver_id = rec["receiver_id"]
+
+    # Fetch minimal sender info
+    await cursor.execute(
+        """
+        SELECT id, firstname, lastname, image_url
+        FROM users
+        WHERE id = %s
+        """,
+        (sender_id,),
+    )
+    sender = await cursor.fetchone()
+    if not sender:
+        raise HTTPException(status_code=404, detail="Sender not found")
+
+    return {
+        "message_id": message_id,
+        "receiver_id": receiver_id,
+        "sender": sender,
+    }

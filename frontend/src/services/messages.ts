@@ -38,3 +38,13 @@ export type MessageCreate = {
 export async function sendMessage(data: MessageCreate) {
     return postJson('/messages', data)
 }
+
+export type MessageUserInfo = {
+    message_id: number
+    receiver_id: number
+    sender: { id: number; firstname?: string; lastname?: string; image_url?: string | null }
+}
+
+export async function getUserMessageInfo(messageId: number): Promise<MessageUserInfo> {
+    return getJson<MessageUserInfo>(`/messages/${messageId}/user-info`)
+}

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { sendMessage, type MessageCreate } from '../../services/messages'
 import { getReceivers, type User } from '../../services/users'
 import './Chat.css'
@@ -8,6 +9,7 @@ type ChatProps = {
 }
 
 export default function Chat({ onClose }: ChatProps) {
+    const { t } = useTranslation()
     const [recipientType, setRecipientType] = useState<MessageCreate['recipient_type']>('support')
     const [message, setMessage] = useState('')
     const [selectedMembers, setSelectedMembers] = useState<string[]>([])
@@ -31,14 +33,14 @@ export default function Chat({ onClose }: ChatProps) {
 
         const wordCount = message.trim().split(/\s+/).length
         if (wordCount > 150) {
-            alert(`Le message est trop long (${wordCount} mots). La limite est de 150 mots.`)
+            alert(t('notifications.chat.tooLong', `Le message est trop long (${wordCount} mots). La limite est de 150 mots.`))
             return
         }
 
         // Simple heuristic to detect code-like content
         const codePatterns = /<[^>]+>|function\s*\(|=>\s*\{|const\s+\w+\s*=|let\s+\w+\s*=|var\s+\w+\s*=|class\s+\w+\s*\{|import\s+.*from/i
         if (codePatterns.test(message)) {
-            alert("Le message semble contenir du code ou du HTML, ce qui n'est pas autorisé. Veuillez envoyer uniquement du texte brut.")
+            alert(t('notifications.chat.codeNotAllowed', "Le message semble contenir du code ou du HTML, ce qui n'est pas autorisé. Veuillez envoyer uniquement du texte brut."))
             return
         }
 
@@ -52,7 +54,7 @@ export default function Chat({ onClose }: ChatProps) {
             onClose()
         } catch (error) {
             console.error(error)
-            alert('Erreur lors de l\'envoi du message')
+            alert(t('notifications.chat.sendError', "Erreur lors de l'envoi du message"))
         } finally {
             setSending(false)
         }
@@ -62,27 +64,27 @@ export default function Chat({ onClose }: ChatProps) {
         <div className="chat-overlay">
             <div className="chat-modal">
                 <div className="chat-header">
-                    <h5>Nouveau message</h5>
-                    <button className="btn-close" onClick={onClose} aria-label="Close"></button>
+                    <h5>{t('notifications.new', 'Nouveau message')}</h5>
+                    <button className="btn-close" onClick={onClose} aria-label={t('common.close', 'Close')}></button>
                 </div>
                 <div className="chat-body">
                     <div className="mb-3">
-                        <label className="form-label">Destinataire</label>
+                        <label className="form-label">{t('notifications.recipient', 'Destinataire')}</label>
                         <select 
                             className="form-select" 
                             value={recipientType} 
                             onChange={(e) => setRecipientType(e.target.value as any)}
                         >
-                            <option value="support">Support technique</option>
-                            <option value="board">Conseil d'administration</option>
-                            <option value="treasury">Trésorerie</option>
-                            <option value="member">Un membre (Sélectionner)</option>
+                            <option value="support">{t('notifications.recipientSupport', 'Support technique')}</option>
+                            <option value="board">{t('notifications.recipientBoard', "Conseil d'administration")}</option>
+                            <option value="treasury">{t('notifications.recipientTreasury', 'Trésorerie')}</option>
+                            <option value="member">{t('notifications.recipientMember', 'Un membre (Sélectionner)')}</option>
                         </select>
                     </div>
 
                     {recipientType === 'member' && (
                         <div className="mb-3">
-                            <label className="form-label">Membres (sélection multiple possible)</label>
+                            <label className="form-label">{t('notifications.membersSelect', 'Membres (sélection multiple possible)')}</label>
                             <div className="border rounded" style={{ maxHeight: '150px', overflowY: 'auto', backgroundColor: '#f8f9fa' }}>
                                 {members.map(u => (
                                     <div className="d-flex align-items-center border-bottom py-2" key={u.id}>
@@ -121,28 +123,28 @@ export default function Chat({ onClose }: ChatProps) {
                                     </div>
                                 ))}
                             </div>
-                            {loadingMembers && <small className="text-muted">Chargement des membres...</small>}
+                            {loadingMembers && <small className="text-muted">{t('notifications.loadingMembers', 'Chargement des membres...')}</small>}
                         </div>
                     )}
 
                     <div className="mb-3">
-                        <label className="form-label">Message</label>
+                        <label className="form-label">{t('notifications.messageLabel', 'Message')}</label>
                         <textarea 
                             className="form-control" 
                             rows={5} 
                             value={message}
                             onChange={e => setMessage(e.target.value)}
-                            placeholder="Votre message..."
+                            placeholder={t('notifications.messagePlaceholder', 'Votre message...')}
                         ></textarea>
                         <div className="text-end text-muted small mt-1">
-                            {message.trim() ? message.trim().split(/\s+/).length : 0} / 150 mots
+                            {t('notifications.wordCount', `${message.trim() ? message.trim().split(/\s+/).length : 0} / 150 mots`)}
                         </div>
                     </div>
                 </div>
                 <div className="chat-footer">
-                    <button className="btn btn-secondary" onClick={onClose} disabled={sending}>Annuler</button>
+                    <button className="btn btn-secondary" onClick={onClose} disabled={sending}>{t('common.cancel', 'Annuler')}</button>
                     <button className="btn btn-primary" onClick={handleSend} disabled={!message || sending || (recipientType === 'member' && selectedMembers.length === 0)}>
-                        {sending ? 'Envoi...' : 'Envoyer'}
+                        {sending ? t('common.sending', 'Envoi...') : t('common.send', 'Envoyer')}
                     </button>
                 </div>
             </div>
