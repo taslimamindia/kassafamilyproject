@@ -1,0 +1,152 @@
+/* Fun and stylish helpers for AddTransaction */
+.label-with-icon {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+.label-split {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.label-left {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.label-magnitude {
+    font-size: 12px;
+    padding: 4px 10px;
+}
+
+@media (min-width: 576px) {
+    .label-magnitude {
+        font-size: 13px;
+    }
+}
+
+@media (min-width: 992px) {
+    .label-magnitude {
+        font-size: 14px;
+    }
+}
+
+.label-icon {
+    display: inline-flex;
+    align-items: center;
+    color: #646cff;
+}
+
+.help-dot {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    margin-left: 0.25rem;
+    background: #ececff;
+    color: #404080;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: help;
+    position: relative;
+}
+
+.help-dot .help-tooltip {
+    position: absolute;
+    left: 100%;
+    top: 50%;
+    transform: translate(8px, -50%);
+    background: #1f2033;
+    color: #fff;
+    border-radius: 8px;
+    padding: 6px 10px;
+    font-size: 12px;
+    white-space: nowrap;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 150ms ease, transform 150ms ease;
+}
+
+.help-dot:hover .help-tooltip {
+    opacity: 1;
+    transform: translate(10px, -50%);
+}
+
+.magnitude-badge {
+    display: inline-block;
+    padding: 6px 12px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #6a7bff, #8a5bff);
+    color: #fff;
+    font-weight: 600;
+    box-shadow: 0 6px 16px rgba(106, 123, 255, 0.25);
+    animation: mag-pop 220ms ease-out;
+}
+
+@keyframes mag-pop {
+    0% {
+        transform: scale(0.95);
+        opacity: 0.2;
+    }
+
+    100% {
+        transform: scale(1);
+        opacity: 1;
+    }
+}
+
+/* Section wrappers for a cleaner look */
+.form-section {
+    background: #fafbff;
+    border: 1px solid #eef0ff;
+    border-radius: 12px;
+    padding: 12px;
+}
+
+.proof-card {
+    background:
+        linear-gradient(180deg, rgba(138, 91, 255, 0.06), rgba(106, 123, 255, 0.04))
+        , #fafbff;
+    border: 1px solid #e6e9ff;
+}
+
+.card-footer .btn {
+    border-radius: 10px;
+}
+
+/* Animated rank scale under amount */
+.rank-scale {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.rank-pill {
+    display: inline-block;
+    padding: 4px 10px;
+    border-radius: 999px;
+    border: 1px solid #e6e9ff;
+    background: #f6f7ff;
+    color: #3a3f66;
+    font-weight: 600;
+    transition: transform 160ms ease, box-shadow 160ms ease, background 160ms ease, color 160ms ease;
+}
+
+.rank-pill.active {
+    background: linear-gradient(135deg, #6a7bff, #8a5bff);
+    color: #fff;
+    box-shadow: 0 6px 16px rgba(106, 123, 255, 0.25);
+    transform: scale(1.03);
+    animation: mag-pop 220ms ease-out;
+}
+
+.formatted-amount-hint {
+    text-align: right;
+    color: #6b6f93;
+    font-size: 12px;
+}

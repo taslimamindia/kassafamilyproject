@@ -1,12 +1,12 @@
 import { useTranslation } from 'react-i18next'
-import i18n from '../../../i18n'
+import i18n from '../../../../i18n'
 import './AdminActions.css'
 
 // Localized dictionary for this component
 const adminActionsResources = {
-    fr: { admin: { addUser: 'Ajouter un utilisateur' }, common: { refresh: 'Actualiser' } },
-    en: { admin: { addUser: 'Add a user' }, common: { refresh: 'Refresh' } },
-    ar: { admin: { addUser: 'إضافة مستخدم' }, common: { refresh: 'تحديث' } },
+    fr: { admin: { addUser: 'Ajouter un membre' }, common: { refresh: 'Actualiser' } },
+    en: { admin: { addUser: 'Add a member' }, common: { refresh: 'Refresh' } },
+    ar: { admin: { addUser: 'إضافة عضو' }, common: { refresh: 'تحديث' } },
 }
 
 for (const [lng, res] of Object.entries(adminActionsResources)) {

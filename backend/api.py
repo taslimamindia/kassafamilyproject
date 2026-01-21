@@ -3,9 +3,13 @@ from fastapi.middleware.cors import CORSMiddleware
 import logging
 from contextlib import asynccontextmanager
 
-from routers import auth, users, roles, system
+from routers import auth, users, roles, system, messages, transactions
+from routers import admin_db
+from routers import family_assignation as family_assignation_router
 from database import get_db_connection
 from dependencies import ensure_revoked_tokens_table
+from utils import init_users_graph
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -16,7 +20,14 @@ async def lifespan(app: FastAPI):
         try:
             conn.commit()
         except Exception:
-            logging.exception("[lifespan] Commit failed after ensuring revoked_tokens table")
+            logging.exception(
+                "[lifespan] Commit failed after ensuring revoked_tokens table"
+            )
+        # Initialize users graph at startup
+        try:
+            init_users_graph(app)
+        except Exception:
+            logging.exception("[lifespan] Failed to initialize users graph")
         yield
     finally:
         try:
@@ -26,6 +37,7 @@ async def lifespan(app: FastAPI):
                 conn.close()
             except Exception:
                 logging.exception("[lifespan] Failed to close DB connection")
+
 
 app = FastAPI(lifespan=lifespan)
 
@@ -42,6 +54,10 @@ app.add_middleware(
 )
 
 app.include_router(auth.router, prefix="/auth", tags=["Auth"])
-app.include_router(users.router, tags=["Users"]) 
-app.include_router(roles.router, tags=["Roles"]) 
+app.include_router(users.router, tags=["Users"])
+app.include_router(roles.router, tags=["Roles"])
 app.include_router(system.router, tags=["System"])
+app.include_router(messages.router, tags=["Messages"])
+app.include_router(transactions.router, tags=["Transactions"])
+app.include_router(family_assignation_router.router, tags=["FamilyAssignations"])
+app.include_router(admin_db.router, tags=["AdminDB"])

@@ -103,7 +103,7 @@ def get_db_connection(autocommit: bool = True):
         try:
             _db_pool = pooling.MySQLConnectionPool(
                 pool_name="kassa_pool",
-                pool_size=5,
+                pool_size=settings.db_pool_size,
                 **config,
             )
         except mysql.connector.Error as e:
@@ -111,7 +111,7 @@ def get_db_connection(autocommit: bool = True):
             logger.warning(f"[db] Initial pool creation failed, retrying with unique name: {e}")
             _db_pool = pooling.MySQLConnectionPool(
                 pool_name=f"kassa_pool_{uuid.uuid4().hex[:8]}",
-                pool_size=5,
+                pool_size=settings.db_pool_size,
                 **config,
             )
 

@@ -166,6 +166,43 @@
     margin-top: 4px;
 }
 
+/* Fun chips for roles */
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    border-radius: 999px;
+    background: #eef2ff;
+    color: #1e3a8a;
+    font-weight: 600;
+    font-size: 12px;
+}
+.chip-role { background: #f1f5f9; color: #0f172a; border: 1px solid #e2e8f0; }
+
+/* Parent mini-cards */
+.parents-cards { display: grid; grid-template-columns: 1fr; gap: 10px; }
+@media (min-width: 520px) { .parents-cards { grid-template-columns: 1fr 1fr; } }
+.parent-card {
+    display: grid;
+    grid-template-columns: 44px 1fr;
+    gap: 10px;
+    align-items: center;
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 8px 10px;
+}
+.parent-avatar {
+    width: 44px; height: 44px; border-radius: 50%; overflow: hidden; background: #e2e8f0; display:flex; align-items:center; justify-content:center;
+}
+.parent-avatar img { width: 100%; height: 100%; object-fit: cover; display:block; }
+.parent-initials { font-weight: 700; color: #334155; }
+.parent-info { min-width: 0; }
+.parent-name { font-weight: 600; color: #0f172a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.parent-birthday { font-size: 12px; color: #64748b; }
+
 .profile-actions {
     padding: 16px;
     display: flex;

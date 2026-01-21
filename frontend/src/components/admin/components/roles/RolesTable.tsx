@@ -1,7 +1,8 @@
-import { type Role, deleteRole } from '../../../services/roles'
+import { type Role, deleteRole } from '../../../../services/roles'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import i18n from '../../../i18n'
+import i18n from '../../../../i18n'
+import { getRoleLabel } from '../../../../constants/roleLabels'
 
 // Localized dictionary for this component
 const rolesTableResources = {
@@ -72,7 +73,7 @@ export default function RolesTable({ roles, onEdit, onDeleted }: {
                         {roles.map(role => (
                             <tr key={role.id}>
                                 <td>{role.id}</td>
-                                <td>{role.role}</td>
+                                <td>{getRoleLabel(role.role)}</td>
                                 <td className="text-end">
                                     <button
                                         className="btn btn-sm btn-outline-primary me-2"

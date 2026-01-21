@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
-import { getUsers, type User } from '../../../services/users'
-import AdminActions from './AdminActions'
-import AddUserForm from './AddUserForm'
-import EditUserForm from './EditUserForm'
-import UsersTable from './UsersTable'
+import { getUsers, type User, getCurrentUser } from '../../../services/users'
+import { getRolesForUser } from '../../../services/roleAttributions'
+import AddUserForm from './users/AddUserForm'
+import EditUserForm from './users/EditUserForm'
+import UsersTable from './users/UsersTable'
 import Modal from '../../common/Modal'
 import { useTranslation } from 'react-i18next'
 import i18n from '../../../i18n'
@@ -11,19 +11,19 @@ import i18n from '../../../i18n'
 // Localized dictionary for this component
 const usersTabResources = {
     fr: {
-        users: { loadError: 'Erreur lors du chargement des utilisateurs' },
+        users: { loadError: 'Erreur lors du chargement des membres' },
         common: { create: 'Créer', edit: 'Modifier' },
-        nav: { users: 'Utilisateurs' },
+        nav: { users: 'Membres' },
     },
     en: {
-        users: { loadError: 'Error loading users' },
+        users: { loadError: 'Error loading members' },
         common: { create: 'Create', edit: 'Edit' },
-        nav: { users: 'Users' },
+        nav: { users: 'Members' },
     },
     ar: {
-        users: { loadError: 'خطأ أثناء تحميل المستخدمين' },
+        users: { loadError: 'خطأ أثناء تحميل الأعضاء' },
         common: { create: 'إنشاء', edit: 'تعديل' },
-        nav: { users: 'المستخدمون' },
+        nav: { users: 'الأعضاء' },
     },
 }
 
@@ -47,7 +47,42 @@ export default function UsersTab({
     const [query, setQuery] = useState('')
     const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('active')
     const [firstLoginFilter, setFirstLoginFilter] = useState<'all' | 'yes' | 'no'>('all')
+    const [roleFilter, setRoleFilter] = useState<string>('all')
+    const [tierFilter, setTierFilter] = useState<string>('all')
     const [debouncedQuery, setDebouncedQuery] = useState('')
+
+    // Set default `statusFilter` based on current user's role:
+    // - 'active' when user has 'admin'
+    // - 'all' when user has 'admingroup'
+    useEffect(() => {
+        let mounted = true
+        ;(async () => {
+            try {
+                const me = await getCurrentUser()
+                if (!mounted) return
+                try {
+                    const roles = await getRolesForUser(me.id)
+                    const names = roles.map(r => (r.role || '').toLowerCase())
+                    if (names.includes('admingroup')) {
+                        setStatusFilter('all')
+                    } else if (names.includes('admin')) {
+                        setStatusFilter('active')
+                    }
+                } catch {
+                    // fallback: if getCurrentUser included roles, still handle it
+                    const roleNames = me.roles?.map(r => (r.role || '').toLowerCase()) ?? []
+                    if (roleNames.includes('admingroup')) {
+                        setStatusFilter('all')
+                    } else if (roleNames.includes('admin')) {
+                        setStatusFilter('active')
+                    }
+                }
+            } catch {
+                // ignore errors and keep existing default
+            }
+        })()
+        return () => { mounted = false }
+    }, [])
 
     const [editingId, setEditingId] = useState<number | null>(null)
     const [currentUser, setCurrentUser] = useState<User | null>(null)
@@ -63,6 +98,8 @@ export default function UsersTab({
                 status: statusFilter,
                 firstLogin: firstLoginFilter,
                 q: debouncedQuery || undefined,
+                roles: roleFilter !== 'all' ? roleFilter : undefined,
+                contribution_tier: tierFilter !== 'all' ? tierFilter : undefined,
             })
             setUsers(data)
             // Force image reloads by updating a cache-busting token
@@ -80,7 +117,7 @@ export default function UsersTab({
         return () => clearTimeout(timer)
     }, [query])
 
-    useEffect(() => { refresh() }, [debouncedQuery, statusFilter, firstLoginFilter])
+    useEffect(() => { refresh() }, [debouncedQuery, statusFilter, firstLoginFilter, roleFilter, tierFilter])
 
     function startCreate() {
         setEditingId(0)
@@ -117,7 +154,7 @@ export default function UsersTab({
 
     return (
         <div>
-            <AdminActions onCreate={startCreate} onRefresh={refresh} loading={loading} />
+            {/* AdminActions moved into UsersTable */}
 
             {error && <div className="alert alert-danger" role="alert">{error}</div>}
 
@@ -157,7 +194,14 @@ export default function UsersTab({
                 onQueryChange={setQuery}
                 onStatusFilterChange={setStatusFilter}
                 onFirstLoginFilterChange={setFirstLoginFilter}
+                roleFilter={roleFilter}
+                onRoleFilterChange={setRoleFilter}
+                tierFilter={tierFilter}
+                onTierFilterChange={setTierFilter}
                 imageBustToken={imageBustToken}
+                onCreate={startCreate}
+                onRefresh={refresh}
+                loading={loading}
             />
         </div>
     )

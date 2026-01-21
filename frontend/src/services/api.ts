@@ -1,4 +1,5 @@
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000'
+import axios, { type AxiosInstance } from 'axios'
 
 function getStoredToken(): string | null {
     try {
@@ -60,3 +61,38 @@ export async function postJson<T, B = unknown>(path: string, body?: B, init: Req
     }
     return (await res.json()) as T
 }
+
+// Axios client for components that prefer axios APIs (e.g., Recharts data loaders)
+export const axiosClient: AxiosInstance = (() => {
+    const instance = axios.create({ baseURL: API_BASE_URL })
+    instance.interceptors.request.use((config) => {
+        const token = getStoredToken()
+        if (token) {
+            config.headers = config.headers ?? {}
+            config.headers.Authorization = `Bearer ${token}`
+        }
+        return config
+    })
+    instance.interceptors.response.use(
+        (resp) => resp,
+        (err) => {
+            const status = err?.response?.status
+            const path = err?.config?.url ?? ''
+            const isAuthPath = path.startsWith('/auth')
+            if ((status === 401 || status === 403) && !isAuthPath) {
+                try {
+                    localStorage.removeItem('access_token')
+                    try { window.dispatchEvent(new Event('auth-changed')) } catch {}
+                } catch {}
+                try {
+                    const isOnAuth = typeof window !== 'undefined' && window.location && window.location.pathname === '/auth'
+                    if (!isOnAuth) {
+                        window.location.assign('/auth')
+                    }
+                } catch {}
+            }
+            return Promise.reject(err)
+        }
+    )
+    return instance
+})()

@@ -1,7 +1,8 @@
 import { useMemo } from 'react'
-import type { RoleAttribution } from '../../../services/roleAttributions'
+import type { RoleAttribution } from '../../../../services/roleAttributions'
 import { useTranslation } from 'react-i18next'
-import i18n from '../../../i18n'
+import i18n from '../../../../i18n'
+import { getRoleLabel } from '../../../../constants/roleLabels'
 // Localized dictionary for this component
 const roleAssignmentsResources = {
     fr: { roles: { assignmentsTitle: 'Utilisateurs par Rôle', noAssignments: 'Aucune attribution de rôle trouvée.' }, common: { none: 'Aucun' } },
@@ -18,35 +19,35 @@ export default function RoleAssignments({ attributions }: { attributions: RoleAt
     const grouped = useMemo(() => {
         const groups: Record<string, RoleAttribution[]> = {}
         for (const attr of attributions) {
-            const roleName = attr.role || t('common.none')
-            if (!groups[roleName]) {
-                groups[roleName] = []
+            const raw = attr.role || 'norole'
+            if (!groups[raw]) {
+                groups[raw] = []
             }
-            groups[roleName].push(attr)
+            groups[raw].push(attr)
         }
         return groups
     }, [attributions])
 
-    // Sort roles alphabetically
-    const sortedRoles = Object.keys(grouped).sort()
+    // Sort roles by localized label
+    const sortedRoles = Object.keys(grouped).sort((a, b) => getRoleLabel(a).localeCompare(getRoleLabel(b)))
 
     return (
         <div className="mt-5">
             <h4 className="mb-3 border-bottom pb-2">{t('roles.assignmentsTitle')}</h4>
             <div className="row g-4">
-                {sortedRoles.map(role => (
-                    <div key={role} className="col-12 col-md-6 col-lg-4">
+                {sortedRoles.map(roleKey => (
+                    <div key={roleKey} className="col-12 col-md-6 col-lg-4">
                         <div className="card h-100 border-0 shadow-sm">
                             <div className="card-header bg-primary text-white py-2">
                                 <div className="d-flex justify-content-between align-items-center">
-                                    <h5 className="mb-0 fs-6 fw-bold">{role}</h5>
+                                    <h5 className="mb-0 fs-6 fw-bold">{getRoleLabel(roleKey)}</h5>
                                     <span className="badge bg-white text-primary rounded-pill">
-                                        {grouped[role].length}
+                                        {grouped[roleKey].length}
                                     </span>
                                 </div>
                             </div>
                             <div className="list-group list-group-flush overflow-auto" style={{ maxHeight: '300px' }}>
-                                {grouped[role].map(attr => (
+                                {grouped[roleKey].map(attr => (
                                     <div key={attr.id} className="list-group-item d-flex align-items-center px-3 py-2">
                                         <div 
                                             className="rounded-circle bg-light d-flex align-items-center justify-content-center me-3 text-secondary overflow-hidden"

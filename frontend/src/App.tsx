@@ -20,6 +20,12 @@ import './i18n'
 import { LanguageProvider } from './contexts/LanguageContext'
 import HomeUser from './components/user/HomeUser'
 import Tree from './components/familytree/Tree'
+import HomeChartes from './components/chartes/HomeChartes'
+import FloatingChatButton from './components/notifications/FloatingChatButton'
+import Transactions from './components/transactions/Transactions'
+import HomeCaisse from './components/transactions/HomeCaisse'
+import TransactionApprovals from './components/transactions/TransactionApprovals'
+import NotificationsPage from './components/notifications/NotificationsPage'
 
 function App() {
   return (
@@ -30,13 +36,14 @@ function App() {
         <main className="flex-grow-1 overflow-auto">
           <Routes>
             <Route path="/" element={<Home />} />
-            <Route 
-              path="/tree" 
+            <Route path="/chartes" element={<HomeChartes />} />
+            <Route
+              path="/tree"
               element={
                 <ProtectedRoute>
                   <Tree />
                 </ProtectedRoute>
-              } 
+              }
             />
             <Route path="/auth" element={<Login />} />
             <Route path="/change-password" element={<ChangePasswordFirstLogin />} />
@@ -84,10 +91,46 @@ function App() {
                 </ProtectedRoute>
               }
             />
+            <Route
+              path="/caisse"
+              element={
+                <ProtectedRoute>
+                  <HomeCaisse />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/transactions"
+              element={
+                <ProtectedRoute>
+                  <Transactions />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/approvals"
+              element={
+                <ProtectedRoute>
+                  <TransactionApprovals />
+                </ProtectedRoute>
+              }
+            />
+
+            <Route
+              path="/notifications"
+              element={
+                <ProtectedRoute>
+                  <NotificationsPage />
+                </ProtectedRoute>
+              }
+            />
+
+            {/* Add/Update handled via modals inside the Transactions page; routes removed */}
             <Route path="*" element={<Navigate to="/errors" replace />} />
           </Routes>
         </main>
         <Footer />
+        <FloatingChatButton />
       </div>
     </LanguageProvider>
   )

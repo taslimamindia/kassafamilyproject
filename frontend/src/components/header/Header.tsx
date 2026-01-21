@@ -1,18 +1,21 @@
 import './Header.css'
-import { Link, NavLink, useNavigate } from 'react-router-dom'
+import { Link, NavLink, useNavigate, useLocation } from 'react-router-dom'
 import { useEffect, useState } from 'react'
-import { logout, verifyToken } from '../../services/auth'
-import { getCurrentUser } from '../../services/users'
-import { getRolesForUser } from '../../services/roleAttributions'
-import LanguageSwitcher from '../common/LanguageSwitcher'
 import { useTranslation } from 'react-i18next'
-import i18n from '../../i18n'
+import { logout, verifyToken } from '@src/services/auth'
+import { getCurrentUser } from '@src/services/users'
+import { getRolesForUser } from '@src/services/roleAttributions'
+import LanguageSwitcher from '@components/common/LanguageSwitcher'
+import Notifications from '@components/notifications/Notification'
+import i18n from '@src/i18n'
+import { getRoleLabel } from '@src/constants/roleLabels'
+
 
 // Localized dictionary for this component (decentralized)
 const headerResources = {
     fr: {
         header: {
-            userAccount: 'Compte utilisateur',
+            userAccount: 'Compte membre',
             viewProfile: 'Voir le profil',
             editProfile: 'Modifier le profil',
         },
@@ -21,13 +24,16 @@ const headerResources = {
             logout: 'Se déconnecter',
             profile: 'Profil',
             admin: 'Admin',
-            users: 'Utilisateurs',
+            users: 'Membre',
+            cash: 'Caisse',
             tree: 'Arbre généalogique',
+            chartes: 'Chartes',
+            home: 'Accueil',
         },
     },
     en: {
         header: {
-            userAccount: 'User account',
+            userAccount: 'Member account',
             viewProfile: 'View profile',
             editProfile: 'Edit profile',
         },
@@ -36,13 +42,16 @@ const headerResources = {
             logout: 'Sign out',
             profile: 'Profile',
             admin: 'Admin',
-            users: 'Users',
+            users: 'Member',
+            cash: 'Cash',
             tree: 'Family Tree',
+            chartes: 'Charter',
+            home: 'Home',
         },
     },
     ar: {
         header: {
-            userAccount: 'حساب المستخدم',
+            userAccount: 'حساب العضو',
             viewProfile: 'عرض الملف',
             editProfile: 'تعديل الملف',
         },
@@ -51,8 +60,11 @@ const headerResources = {
             logout: 'تسجيل الخروج',
             profile: 'الملف الشخصي',
             admin: 'المشرف',
-            users: 'المستخدمون',
+            users: 'عضو',
+            cash: 'الصندوق',
             tree: 'الشجرة العائلية',
+            chartes: 'الميثاق',
+            home: 'الصفحة الرئيسية',
         },
     },
 }
@@ -66,7 +78,10 @@ function Header() {
     const [isAuth, setIsAuth] = useState<boolean | null>(null)
     const [isAdmin, setIsAdmin] = useState<boolean>(false)
     const [isGroupAdmin, setIsGroupAdmin] = useState<boolean>(false)
+    const [me, setMe] = useState<{ firstname?: string; lastname?: string; image_url?: string | null } | null>(null)
     const { t } = useTranslation()
+    const location = useLocation()
+    const isCashActive = location.pathname.startsWith('/caisse') || location.pathname.startsWith('/transactions') || location.pathname.startsWith('/approvals')
 
     useEffect(() => {
         let mounted = true
@@ -78,6 +93,7 @@ function Header() {
                 if (ok) {
                     try {
                         const user = await getCurrentUser()
+                        setMe({ firstname: user.firstname, lastname: user.lastname, image_url: user.image_url })
                         const roles = await getRolesForUser(user.id)
                         const names = roles.map(r => (r.role || '').toLowerCase())
                         setIsAdmin(names.includes('admin'))
@@ -85,13 +101,15 @@ function Header() {
                     } catch {
                         setIsAdmin(false)
                         setIsGroupAdmin(false)
+                        setMe(null)
                     }
                 } else {
                     setIsAdmin(false)
                     setIsGroupAdmin(false)
+                    setMe(null)
                 }
             } catch {
-                if (mounted) { setIsAuth(false); setIsAdmin(false); setIsGroupAdmin(false) }
+                if (mounted) { setIsAuth(false); setIsAdmin(false); setIsGroupAdmin(false); setMe(null) }
             }
         }
         // Initial check
@@ -112,6 +130,33 @@ function Header() {
         navigate('/', { replace: true })
     }
 
+    function renderAvatar() {
+        const size = 32
+        const style: React.CSSProperties = { width: size, height: size }
+        if (me?.image_url) {
+            return (
+                <img
+                    src={me.image_url}
+                    alt="Avatar"
+                    className="rounded-circle"
+                    style={{ ...style, objectFit: 'cover' }}
+                />
+            )
+        }
+        const first = (me?.firstname || '').trim()
+        const last = (me?.lastname || '').trim()
+        const initials = `${first ? first[0] : ''}${last ? last[0] : ''}`.toUpperCase() || 'U'
+        return (
+            <span
+                className="rounded-circle d-inline-flex align-items-center justify-content-center bg-secondary text-white fw-semibold"
+                style={style}
+                aria-hidden="true"
+            >
+                {initials}
+            </span>
+        )
+    }
+
     return (
         <header className="border-bottom bg-light sticky-top">
             <nav className="navbar navbar-expand-lg navbar-light container" aria-label="Navigation principale">
@@ -129,15 +174,47 @@ function Header() {
                 >
                     <span className="navbar-toggler-icon"></span>
                 </button>
-                <div className="collapse navbar-collapse" id="mainNavbar">
-                    <ul className="navbar-nav ms-lg-auto mb-2 mb-lg-0 gap-lg-2 align-items-lg-center">
+                <div className="collapse navbar-collapse text-align-right" id="mainNavbar">
+                    <ul className="navbar-nav ms-lg-auto mb-2 mb-lg-0 gap-lg-2 align-items-center">
+                        <li className='nav-item'>
+                            <NavLink to="/" className={({ isActive }) => `nav-link d-flex align-items-center gap-2 ${isActive ? 'active' : ''}`}>
+                                <i className="bi bi-house-door" aria-hidden="true"></i>
+                                {t('nav.home')}
+                            </NavLink>
+                        </li>
+                        {isAuth && (
+                            <li className="nav-item">
+                                <NavLink to="/user" className={({ isActive }) => `nav-link d-flex align-items-center gap-2 ${isActive ? 'active' : ''}`}>
+                                    <i className="bi bi-person" aria-hidden="true"></i>
+                                    {t('nav.users')}
+                                </NavLink>
+                            </li>
+                        )}
+                        
+                        {isAuth && isAdmin && (
+                            <li className="nav-item">
+                                <NavLink to="/admin" className={({ isActive }) => `nav-link d-flex align-items-center gap-2 ${isActive ? 'active' : ''}`}>
+                                    <i className="bi bi-shield-lock" aria-hidden="true"></i>
+                                    {t('nav.admin')}
+                                </NavLink>
+                            </li>
+                        )}
+                        
+                        {isAuth && isGroupAdmin && !isAdmin && (
+                            <li className="nav-item">
+                                <NavLink to="/admingroup" className={({ isActive }) => `nav-link d-flex align-items-center gap-2 ${isActive ? 'active' : ''}`}>
+                                    <i className="bi bi-people" aria-hidden="true"></i>
+                                    {getRoleLabel('admingroup')}
+                                </NavLink>
+                            </li>
+                        )}
 
                         {isAuth && (
                             <>
                                 <li className="nav-item">
-                                    <NavLink to="/user" className={({ isActive }) => `nav-link d-flex align-items-center gap-2 ${isActive ? 'active' : ''}`}>
-                                        <i className="bi bi-house-heart" aria-hidden="true"></i>
-                                        {t('nav.users')}
+                                    <NavLink to="/caisse" className={() => `nav-link d-flex align-items-center gap-2 ${isCashActive ? 'active' : ''}`}>
+                                        <i className="bi bi-cash-coin" aria-hidden="true"></i>
+                                        {t('nav.cash')}
                                     </NavLink>
                                 </li>
                                 <li className="nav-item">
@@ -146,24 +223,13 @@ function Header() {
                                         {t('nav.tree')}
                                     </NavLink>
                                 </li>
+                                <li className="nav-item">
+                                    <NavLink to="/chartes" className={({ isActive }) => `nav-link d-flex align-items-center gap-2 ${isActive ? 'active' : ''}`}>
+                                        <i className="bi bi-file-earmark-text" aria-hidden="true"></i>
+                                        {t('nav.chartes')}
+                                    </NavLink>
+                                </li>
                             </>
-                        )}
-
-                        {isAuth && isAdmin && (
-                            <li className="nav-item">
-                                <NavLink to="/admin" className={({ isActive }) => `nav-link d-flex align-items-center gap-2 ${isActive ? 'active' : ''}`}>
-                                    <i className="bi bi-shield-lock" aria-hidden="true"></i>
-                                    Admin
-                                </NavLink>
-                            </li>
-                        )}
-                        {isAuth && isGroupAdmin && (
-                            <li className="nav-item">
-                                <NavLink to="/admingroup" className={({ isActive }) => `nav-link d-flex align-items-center gap-2 ${isActive ? 'active' : ''}`}>
-                                    <i className="bi bi-people" aria-hidden="true"></i>
-                                    Admin de Groupe
-                                </NavLink>
-                            </li>
                         )}
 
                         {isAuth === null ? null : isAuth ? (
@@ -173,9 +239,9 @@ function Header() {
                                     data-bs-toggle="dropdown"
                                     aria-expanded="false"
                                     aria-label={t('header.userAccount')}
+                                    title={`${(me?.firstname || '').trim()} ${(me?.lastname || '').trim()}`.trim() || t('nav.profile')}
                                 >
-                                    <i className="bi bi-person-circle fs-5" aria-hidden="true"></i>
-                                    <span>{t('nav.profile')}</span>
+                                    {renderAvatar()}
                                 </button>
                                 <ul className="dropdown-menu dropdown-menu-end">
                                     <li>
@@ -211,6 +277,10 @@ function Header() {
                         <li className="nav-item d-flex align-items-center">
                             <LanguageSwitcher />
                         </li>
+                        {/* Notifications */}
+                        {isAuth && (
+                            <Notifications />
+                        )}
                     </ul>
                 </div>
             </nav>

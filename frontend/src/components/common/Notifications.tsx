@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 
 type NotifyDetail = {
     type: 'success' | 'danger' | 'info' | 'warning'
@@ -9,6 +10,7 @@ type NotifyDetail = {
 type Item = NotifyDetail & { id: number }
 
 export default function Notifications() {
+    const { t } = useTranslation()
     const [items, setItems] = useState<Item[]>([])
 
     useEffect(() => {
@@ -48,7 +50,7 @@ export default function Notifications() {
                             <div className="toast-body">
                                 {it.message}
                             </div>
-                            <button type="button" className="btn-close btn-close-white me-2 m-auto" aria-label="Close" onClick={() => setItems((prev) => prev.filter((x) => x.id !== it.id))}></button>
+                            <button type="button" className="btn-close btn-close-white me-2 m-auto" aria-label={t('common.close', 'Close')} onClick={() => setItems((prev) => prev.filter((x) => x.id !== it.id))}></button>
                         </div>
                     </div>
                 ))}

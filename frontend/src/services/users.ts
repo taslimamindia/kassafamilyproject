@@ -1,4 +1,5 @@
 import { getJson, apiFetch } from './api'
+import type { ContributionTier } from '../constants/contributionTiers'
 
 export type User = {
     id: number
@@ -10,24 +11,49 @@ export type User = {
     birthday?: string
     image_url?: string | null
     gender?: 'male' | 'female' | null
+    contribution_tier?: ContributionTier | null
     id_father?: number | null
     id_mother?: number | null
     // Activation and first-login flags (numeric per backend: 1/0)
     isactive?: number
     isfirstlogin?: number
+    roles?: { id: number, role: string }[]
 }
 
 export async function getUsers(opts: {
     status?: 'all' | 'active' | 'inactive'
     firstLogin?: 'all' | 'yes' | 'no'
+    roles?: string | string[]
     q?: string
+    [key: string]: any
 } = {}): Promise<User[]> {
     const params = new URLSearchParams()
-    params.set('status', (opts.status ?? 'active'))
-    params.set('first_login', (opts.firstLogin ?? 'all'))
-    if (opts.q) params.set('q', opts.q)
+    
+    const { status = 'active', firstLogin = 'all', roles, q, ...rest } = opts
+
+    params.set('status', status)
+    params.set('first_login', firstLogin)
+    if (roles) {
+        if (Array.isArray(roles)) {
+            params.set('role', roles.join(','))
+        } else {
+            params.set('role', roles)
+        }
+    }
+    if (q) params.set('q', q)
+
+    Object.entries(rest).forEach(([key, val]) => {
+        if (val !== undefined && val !== null) {
+            params.set(key, String(val))
+        }
+    })
+    
     const query = params.toString()
     return getJson<User[]>(`/users${query ? `?${query}` : ''}`)
+}
+
+export async function getReceivers(): Promise<User[]> {
+    return getJson<User[]>('/users/receivers')
 }
 
 export async function getCurrentUser(): Promise<User> {
@@ -48,6 +74,10 @@ export async function getUserById(id: number): Promise<User> {
     return getJson<User>(`/users/${id}`)
 }
 
+export async function getParentsByUserId(id: number): Promise<{ father: User | null; mother: User | null }> {
+    return getJson<{ father: User | null; mother: User | null }>(`/users/${id}/parents`)
+}
+
 export async function createUser(user: {
     firstname: string
     lastname: string
@@ -57,6 +87,7 @@ export async function createUser(user: {
     birthday?: string
     image_url?: string | null
     gender?: 'male' | 'female' | null
+    contribution_tier?: ContributionTier | null
     id_father?: number | null
     id_mother?: number | null
     isactive?: number
@@ -102,6 +133,7 @@ export async function createUserWithImage(fields: {
     telephone?: string
     birthday?: string
     gender?: 'male' | 'female' | null
+    contribution_tier?: ContributionTier | null
     id_father?: number | null
     id_mother?: number | null
     isactive?: number
@@ -116,6 +148,7 @@ export async function createUserWithImage(fields: {
     if (fields.telephone) form.append('telephone', fields.telephone)
     if (fields.birthday) form.append('birthday', fields.birthday)
     if (fields.gender) form.append('gender', fields.gender)
+    if (fields.contribution_tier) form.append('contribution_tier', fields.contribution_tier)
     if (typeof fields.id_father !== 'undefined' && fields.id_father !== null) form.append('id_father', String(fields.id_father))
     if (typeof fields.id_mother !== 'undefined' && fields.id_mother !== null) form.append('id_mother', String(fields.id_mother))
     if (typeof fields.isactive !== 'undefined') form.append('isactive', String(fields.isactive))
@@ -140,6 +173,7 @@ export async function updateUserByIdWithImage(id: number, fields: (Partial<User>
     if (fields.telephone) form.append('telephone', fields.telephone)
     if (fields.birthday) form.append('birthday', fields.birthday)
     if (fields.gender) form.append('gender', fields.gender)
+    if (typeof fields.contribution_tier !== 'undefined' && fields.contribution_tier !== null) form.append('contribution_tier', String(fields.contribution_tier))
     if (typeof fields.id_father !== 'undefined' && fields.id_father !== null) form.append('id_father', String(fields.id_father))
     if (typeof fields.id_mother !== 'undefined' && fields.id_mother !== null) form.append('id_mother', String(fields.id_mother))
     if (typeof fields.isactive !== 'undefined') form.append('isactive', String(fields.isactive))
@@ -148,4 +182,17 @@ export async function updateUserByIdWithImage(id: number, fields: (Partial<User>
     const res = await apiFetch(`/users/${id}`, { method: 'PATCH', body: form })
     if (!res.ok) throw new Error('PATCH /users/{id} (multipart) failed')
     return (await res.json()) as User
+}
+
+export async function updateUsersTierBulk(userIds: number[], tier: string | null): Promise<void> {
+    const res = await apiFetch('/users/bulk-tier', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_ids: userIds, contribution_tier: tier }),
+    })
+    if (!res.ok) {
+        const text = await res.text()
+        console.error('Bulk tier update failed:', res.status, text)
+        throw new Error(`PATCH /users/bulk-tier failed: ${res.status} ${text}`)
+    }
 }

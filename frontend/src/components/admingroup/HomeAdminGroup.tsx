@@ -6,19 +6,19 @@ import UsersTab from '../admin/components/UsersTab'
 const homeAdminGroupResources = {
     fr: {
         admingroup: {
-            space: 'Espace Admin de Groupe',
+            space: "Espace de la gestion de la famille",
             tabs: { users: 'Utilisateurs' }
         }
     },
     en: {
         admingroup: {
-            space: 'Group Admin Area',
+            space: 'Family Management Area',
             tabs: { users: 'Users' }
         }
     },
     ar: {
         admingroup: {
-            space: 'منطقة مسؤول المجموعة',
+            space: 'منطقة إدارة العائلة',
             tabs: { users: 'المستخدمون' }
         }
     },
@@ -35,7 +35,7 @@ export default function HomeAdminGroup() {
             <div className="d-flex justify-content-between align-items-center mb-2">
                 <h2>{t('admingroup.space')}</h2>
             </div>
-            <UsersTab userFormOptions={{ allowedRoleNames: ['admingroup', 'user'] }} />
+            <UsersTab userFormOptions={{ allowedRoleNames: ['admingroup', 'member', 'norole'] }} />
         </div>
     )
 }

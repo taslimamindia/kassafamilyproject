@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom'
-import AddUserForm from '../admin/components/AddUserForm'
+import AddUserForm from '../admin/components/users/AddUserForm'
 import type { User } from '../../services/users'
 import { assignRoleToUser } from '../../services/roleAttributions'
 import { toast } from 'react-toastify'

@@ -1,13 +1,15 @@
 import { useEffect, useState, useRef } from 'react'
-import { createUser, type User, createUserWithImage, getUsers } from '../../../services/users'
-import { getRoles, type Role } from '../../../services/roles'
-import { assignRoleToUser } from '../../../services/roleAttributions'
+import { createUser, type User, createUserWithImage, getUsers } from '../../../../services/users'
+import { tierOptions } from '../../../../constants/contributionTiers'
+import { getRoles, type Role } from '../../../../services/roles'
+import { getRoleLabel } from '../../../../constants/roleLabels'
+import { assignRoleToUser } from '../../../../services/roleAttributions'
 import PhoneInput, { isValidPhoneNumber } from 'react-phone-number-input'
 import 'react-phone-number-input/style.css'
 import Select from 'react-select'
-import Modal from '../../common/Modal'
+import Modal from '../../../common/Modal'
 import { useTranslation } from 'react-i18next'
-import i18n from '../../../i18n'
+import i18n from '../../../../i18n'
 
 const userFormResources = {
     fr: {
@@ -21,6 +23,7 @@ const userFormResources = {
                 birthday: { title: "Date de naissance", desc: "Sélectionnez la date de naissance (AAAA-MM-JJ). Optionnel." },
                 image: { title: "Image (optionnel)", desc: "Ajoutez une photo de profil (JPEG/PNG). Optionnel." },
                 gender: { title: "Genre", desc: "Sélectionnez le genre de l'utilisateur: Homme ou Femme." },
+                contribution_tier: { title: "Niveau de contribution", desc: "Choisissez le niveau de contribution (LEVEL1 à LEVEL4). Optionnel." },
                 isactive: { title: "Utilisateur actif", desc: "Activez pour autoriser la connexion de l'utilisateur. Désactivez pour bloquer l'accès." },
                 isfirstlogin: { title: "Première connexion", desc: "Activez si l'utilisateur doit changer son mot de passe lors de sa première connexion." },
                 father: { title: "Père", desc: "Sélectionnez le parent (père) s'il est déjà enregistré. Optionnel." },
@@ -32,7 +35,7 @@ const userFormResources = {
             labels: {
                 profilePhoto: "Photo de profil", changePhoto: "Changer la photo", activeAccount: "Compte Actif", firstLogin: "Première Connexion",
                 firstname: "Prénom", lastname: "Nom", birthday: "Date de naissance", email: "Email", phone: "Téléphone",
-                username: "Nom d'utilisateur", father: "Père", mother: "Mère", gender: "Genre"
+                username: "Nom d'utilisateur", father: "Père", mother: "Mère", gender: "Genre", contributionTier: "Niveau de contribution"
             },
             descriptions: {
                 activeAccount: "Autoriser ce compte à se connecter.", firstLogin: "Forcer le changement de MDP.",
@@ -64,6 +67,7 @@ const userFormResources = {
                 birthday: { title: "Date of Birth", desc: "Select date of birth (YYYY-MM-DD). Optional." },
                 image: { title: "Image (optional)", desc: "Add a profile photo (JPEG/PNG). Optional." },
                 gender: { title: "Gender", desc: "Select the user's gender: Male or Female." },
+                contribution_tier: { title: "Contribution Tier", desc: "Choose the contribution tier (LEVEL1 to LEVEL4). Optional." },
                 isactive: { title: "Active User", desc: "Enable to allow user login. Disable to block access." },
                 isfirstlogin: { title: "First Login", desc: "Enable if the user must change their password on first login." },
                 father: { title: "Father", desc: "Select the parent (father) if already registered. Optional." },
@@ -75,7 +79,7 @@ const userFormResources = {
             labels: {
                 profilePhoto: "Profile Photo", changePhoto: "Change Photo", activeAccount: "Active Account", firstLogin: "First Login",
                 firstname: "First Name", lastname: "Last Name", birthday: "Date of Birth", email: "Email", phone: "Phone",
-                username: "Username", father: "Father", mother: "Mother", gender: "Gender"
+                username: "Username", father: "Father", mother: "Mother", gender: "Gender", contributionTier: "Contribution Tier"
             },
             descriptions: {
                 activeAccount: "Allow this account to log in.", firstLogin: "Force password change.",
@@ -107,6 +111,7 @@ const userFormResources = {
                 birthday: { title: "تاريخ الميلاد", desc: "اختر تاريخ الميلاد (YYYY-MM-DD). اختياري." },
                 image: { title: "صورة (اختياري)", desc: "أضف صورة للملف الشخصي (JPEG/PNG). اختياري." },
                 gender: { title: "النوع", desc: "حدد نوع المستخدم: ذكر أو أنثى." },
+                contribution_tier: { title: "مستوى المساهمة", desc: "اختر مستوى المساهمة (LEVEL1 إلى LEVEL4). اختياري." },
                 isactive: { title: "مستخدم نشط", desc: "قم بالتفعيل للسماح بتسجيل دخول المستخدم. قم بالتعطيل لمنع الوصول." },
                 isfirstlogin: { title: "أول تسجيل دخول", desc: "قم بالتفعيل إذا كان يجب على المستخدم تغيير كلمة المرور عند أول تسجيل دخول." },
                 father: { title: "الأب", desc: "اختر الوالد (الأب) إذا كان مسجلاً بالفعل. اختياري." },
@@ -118,7 +123,7 @@ const userFormResources = {
             labels: {
                 profilePhoto: "صورة الملف الشخصي", changePhoto: "تغيير الصورة", activeAccount: "حساب نشط", firstLogin: "أول تسجيل دخول",
                 firstname: "الاسم الأول", lastname: "الاسم الأخير", birthday: "تاريخ الميلاد", email: "البريد الإلكتروني", phone: "الهاتف",
-                username: "اسم المستخدم", father: "الأب", mother: "الأم", gender: "النوع"
+                username: "اسم المستخدم", father: "الأب", mother: "الأم", gender: "النوع", contributionTier: "مستوى المساهمة"
             },
             descriptions: {
                 activeAccount: "السماح لهذا الحساب بتسجيل الدخول.", firstLogin: "فرض تغيير كلمة المرور.",
@@ -166,11 +171,16 @@ export default function AddUserForm({
         birthday: initial?.birthday ?? '',
         image_url: initial?.image_url ?? '',
         gender: (initial as any)?.gender ?? undefined,
+        contribution_tier: (initial as any)?.contribution_tier ?? null,
     })
     const [imageFile, setImageFile] = useState<File | null>(null)
     const [allRoles, setAllRoles] = useState<Role[]>([])
     const [selectedRoleIds, setSelectedRoleIds] = useState<number[]>([])
-    const [allUsers, setAllUsers] = useState<User[]>([])
+    
+    // Split users into potential fathers/mothers for efficiency
+    const [potentialFathers, setPotentialFathers] = useState<User[]>([])
+    const [potentialMothers, setPotentialMothers] = useState<User[]>([])
+
     const [fatherId, setFatherId] = useState<number | null>(initial?.id_father ?? null)
     const [motherId, setMotherId] = useState<number | null>(initial?.id_mother ?? null)
     const [saving, setSaving] = useState(false)
@@ -180,6 +190,7 @@ export default function AddUserForm({
     const [phone, setPhone] = useState<string | undefined>(initial?.telephone ? String(initial.telephone) : undefined)
     const [isActive, setIsActive] = useState<boolean>(true)
     const [isFirstLogin, setIsFirstLogin] = useState<boolean>(true)
+    const [isMinor, setIsMinor] = useState<boolean>(false)
 
     useEffect(() => {
         async function loadRoles() {
@@ -193,8 +204,13 @@ export default function AddUserForm({
         }
         async function loadUsers() {
             try {
-                const users = await getUsers({ status: 'all' })
-                setAllUsers(users)
+                // Fetch potential parents separately using backend filtering
+                const [fathers, mothers] = await Promise.all([
+                    getUsers({ status: 'all', gender: 'male' }),
+                    getUsers({ status: 'all', gender: 'female' })
+                ])
+                setPotentialFathers(fathers)
+                setPotentialMothers(mothers)
             } catch {
                 // ignore
             }
@@ -272,7 +288,24 @@ export default function AddUserForm({
         }
     }, [])
 
-    type HelpKey = 'firstname' | 'lastname' | 'username' | 'email' | 'telephone' | 'birthday' | 'image' | 'gender' | 'isactive' | 'isfirstlogin' | 'father' | 'mother' | 'roles'
+    useEffect(() => {
+        // compute minor status from birthday
+        const bd = form.birthday ? new Date(String(form.birthday)) : null
+        if (bd && !isNaN(bd.getTime())) {
+            const age = Math.floor((Date.now() - bd.getTime()) / (365.25 * 24 * 60 * 60 * 1000))
+            if (age < 18) {
+                setIsMinor(true)
+                setIsActive(false)
+                setIsFirstLogin(true)
+            } else {
+                setIsMinor(false)
+            }
+        } else {
+            setIsMinor(false)
+        }
+    }, [form.birthday])
+
+    type HelpKey = 'firstname' | 'lastname' | 'username' | 'email' | 'telephone' | 'birthday' | 'image' | 'gender' | 'contribution_tier' | 'isactive' | 'isfirstlogin' | 'father' | 'mother' | 'roles'
     const [helpKey, setHelpKey] = useState<HelpKey | null>(null)
     const helpText: Record<HelpKey, { title: string; desc: string }> = {
         firstname: { title: t('userForm.help.firstname.title'), desc: t('userForm.help.firstname.desc') },
@@ -283,6 +316,7 @@ export default function AddUserForm({
         birthday: { title: t('userForm.help.birthday.title'), desc: t('userForm.help.birthday.desc') },
         image: { title: t('userForm.help.image.title'), desc: t('userForm.help.image.desc') },
         gender: { title: t('userForm.help.gender.title'), desc: t('userForm.help.gender.desc') },
+        contribution_tier: { title: t('userForm.help.contribution_tier.title'), desc: t('userForm.help.contribution_tier.desc') },
         isactive: { title: t('userForm.help.isactive.title'), desc: t('userForm.help.isactive.desc') },
         isfirstlogin: { title: t('userForm.help.isfirstlogin.title'), desc: t('userForm.help.isfirstlogin.desc') },
         father: { title: t('userForm.help.father.title'), desc: t('userForm.help.father.desc') },
@@ -294,6 +328,15 @@ export default function AddUserForm({
         setError(null)
         setEmailError(null)
         setPhoneError(null)
+        // Require birthday and gender
+        if (!form.birthday || String(form.birthday).trim() === '') {
+            setError(i18n.language === 'fr' ? 'Veuillez renseigner la date de naissance.' : i18n.language === 'ar' ? 'يرجى إدخال تاريخ الميلاد.' : 'Please enter birth date.')
+            return
+        }
+        if (!(form as any).gender || String((form as any).gender).trim() === '') {
+            setError(i18n.language === 'fr' ? 'Veuillez choisir le genre.' : i18n.language === 'ar' ? 'يرجى اختيار الجنس.' : 'Please select gender.')
+            return
+        }
         if (fatherId !== null && motherId !== null && fatherId === motherId) {
             setError(t('userForm.errors.parentsMustBeDifferent'))
             return
@@ -319,6 +362,7 @@ export default function AddUserForm({
         try {
             let created: User
             if (imageFile) {
+                const isActiveForPayload = isMinor ? false : isActive
                 created = await createUserWithImage({
                     firstname: form.firstname || '',
                     lastname: form.lastname || '',
@@ -327,12 +371,14 @@ export default function AddUserForm({
                     telephone: phone || undefined,
                     birthday: form.birthday || undefined,
                     gender: (form as any).gender || undefined,
+                    contribution_tier: (form as any).contribution_tier ?? undefined,
                     id_father: fatherId ?? null,
                     id_mother: motherId ?? null,
-                    isactive: isActive ? 1 : 0,
+                    isactive: isActiveForPayload ? 1 : 0,
                     isfirstlogin: isFirstLogin ? 1 : 0,
                 }, imageFile)
             } else {
+                const isActiveForPayload = isMinor ? false : isActive
                 created = await createUser({
                     firstname: form.firstname || '',
                     lastname: form.lastname || '',
@@ -341,9 +387,10 @@ export default function AddUserForm({
                     telephone: phone || undefined,
                     birthday: form.birthday || undefined,
                     gender: (form as any).gender || undefined,
+                    contribution_tier: (form as any).contribution_tier ?? undefined,
                     id_father: fatherId ?? null,
                     id_mother: motherId ?? null,
-                    isactive: isActive ? 1 : 0,
+                    isactive: isActiveForPayload ? 1 : 0,
                     isfirstlogin: isFirstLogin ? 1 : 0,
                 })
             }
@@ -356,7 +403,27 @@ export default function AddUserForm({
                 )
                 validRoleIds = validRoleIds.filter(id => allowedIds.has(id))
             }
-            await Promise.all(validRoleIds.map(rid => assignRoleToUser(created.id, rid)))
+            // Always ensure the backend 'user' role is assigned even if hidden from UI
+            const userRole = allRoles.find(r => String(r.role).toLowerCase() === 'user')
+            if (userRole && !validRoleIds.includes(userRole.id)) {
+                validRoleIds.push(userRole.id)
+            }
+            // If no roles selected, auto-assign 'norole' (if exists) in addition to 'user'
+            if (validRoleIds.length === 0) {
+                const noRole = allRoles.find(r => String(r.role).toLowerCase() === 'norole')
+                if (noRole && !validRoleIds.includes(noRole.id)) {
+                    validRoleIds.push(noRole.id)
+                }
+                // 'user' was already ensured above
+            }
+            // Assign roles; tolerate failures (e.g., permissions) but continue
+            await Promise.all(validRoleIds.map(async rid => {
+                try {
+                    await assignRoleToUser(created.id, rid)
+                } catch (err) {
+                    console.warn('Assign role failed:', rid, err)
+                }
+            }))
             onSaved(created)
         } catch (e) {
             setError(t('userForm.errors.saveError'))
@@ -367,16 +434,22 @@ export default function AddUserForm({
 
     const currentBirthDate = form.birthday ? new Date(String(form.birthday)) : null
     const hasValidDate = (d: Date | null) => !!d && !isNaN(d.getTime())
-    const filteredUsers = allUsers.filter(u => {
+    const birthdayReady = hasValidDate(currentBirthDate)
+    
+    const filterByBirthday = (list: User[]) => list.filter(u => {
         if (hasValidDate(currentBirthDate)) {
             const ub = u.birthday ? new Date(String(u.birthday)) : null
             if (!hasValidDate(ub)) return false
             return (ub as Date).getTime() < (currentBirthDate as Date).getTime()
         }
-        return false
+        return false // If current user has no birthday, cannot enforce age check? Or allow all? 
+        // Logic change: If form has no birthday, maybe we can't filter. 
+        // But original logic returned false if no valid date. This means if I'm creating a user without birthday, I see NO parents.
+        // Preserving original logic: return false.
     })
-    const filteredFathers = filteredUsers.filter(u => (u as any).gender === 'male')
-    const filteredMothers = filteredUsers.filter(u => (u as any).gender === 'female')
+
+    const filteredFathers = filterByBirthday(potentialFathers)
+    const filteredMothers = filterByBirthday(potentialMothers)
 
     const toOption = (u: User) => ({
         value: u.id,
@@ -438,8 +511,9 @@ export default function AddUserForm({
                                     className="form-check-input"
                                     type="checkbox"
                                     id="is-active"
-                                    checked={isActive}
-                                    onChange={e => setIsActive(e.target.checked)}
+                                                checked={isActive}
+                                                onChange={e => setIsActive(e.target.checked)}
+                                                disabled={isMinor}
                                 />
                                 <div className="d-flex justify-content-between align-items-center">
                                     <label className="form-check-label fw-semibold" htmlFor="is-active">{t('userForm.labels.activeAccount')}</label>
@@ -455,6 +529,7 @@ export default function AddUserForm({
                                     id="is-first-login"
                                     checked={isFirstLogin}
                                     onChange={e => setIsFirstLogin(e.target.checked)}
+                                    disabled={isMinor}
                                 />
                                 <div className="d-flex justify-content-between align-items-center">
                                     <label className="form-check-label fw-semibold" htmlFor="is-first-login">{t('userForm.labels.firstLogin')}</label>
@@ -486,12 +561,12 @@ export default function AddUserForm({
                                     </div>
                                 </div>
                                 <div className="col-md-6">
-                                    <label className="form-label small text-muted">{t('userForm.labels.birthday')}</label>
+                                    <label className="form-label small text-muted">{t('userForm.labels.birthday')} <span className="text-danger">*</span></label>
                                     <input type="date" className="form-control" value={form.birthday || ''} onChange={e => setForm(f => ({ ...f, birthday: e.target.value }))} />
                                 </div>
                                 <div className="col-md-6">
                                     <div className="d-flex justify-content-between align-items-center">
-                                        <label className="form-label small text-muted mb-1">{t('userForm.labels.gender')}</label>
+                                        <label className="form-label small text-muted mb-1">{t('userForm.labels.gender')} <span className="text-danger">*</span></label>
                                         <i className="bi bi-info-circle text-muted" onClick={() => setHelpKey('gender')} style={{ cursor: 'pointer' }}></i>
                                     </div>
                                     <div className="d-flex gap-3 align-items-center">
@@ -518,6 +593,22 @@ export default function AddUserForm({
                                             <label className="form-check-label" htmlFor="gender-female">{i18n.language === 'fr' ? 'Femme' : i18n.language === 'ar' ? 'أنثى' : 'Female'}</label>
                                         </div>
                                     </div>
+                                </div>
+                                <div className="col-md-6">
+                                    <div className="d-flex justify-content-between align-items-center">
+                                        <label className="form-label small text-muted mb-1">{t('userForm.labels.contributionTier')}</label>
+                                        <i className="bi bi-info-circle text-muted" onClick={() => setHelpKey('contribution_tier')} style={{ cursor: 'pointer' }}></i>
+                                    </div>
+                                    <select
+                                        className="form-select"
+                                        value={(form as any).contribution_tier ?? ''}
+                                        onChange={e => setForm(f => ({ ...f, contribution_tier: e.target.value ? (e.target.value as any) : null }))}
+                                    >
+                                        <option value="">--</option>
+                                        {tierOptions().map(opt => (
+                                            <option key={opt.value} value={opt.value}>{opt.label}</option>
+                                        ))}
+                                    </select>
                                 </div>
                             </div>
                         </div>
@@ -584,27 +675,47 @@ export default function AddUserForm({
                             <div className="row g-3">
                                 <div className="col-md-6">
                                     <label className="form-label small text-muted">{t('userForm.labels.father')}</label>
-                                    <Select
-                                        isClearable
-                                        classNamePrefix="select"
-                                        options={fatherOptions}
-                                        placeholder={t('userForm.placeholders.selectFather')}
-                                        value={fatherOptions.find(o => o.value === fatherId) ?? null}
-                                        onChange={(opt) => setFatherId(opt ? (opt as { value: number; label: string }).value : null)}
-                                        styles={{ control: (base) => ({ ...base, borderColor: '#dee2e6', boxShadow: 'none' }) }}
-                                    />
+                                    {birthdayReady ? (
+                                        <Select
+                                            isClearable
+                                            classNamePrefix="select"
+                                            options={fatherOptions}
+                                            placeholder={t('userForm.placeholders.selectFather')}
+                                            value={fatherOptions.find(o => o.value === fatherId) ?? null}
+                                            onChange={(opt) => setFatherId(opt ? (opt as { value: number; label: string }).value : null)}
+                                            styles={{ control: (base) => ({ ...base, borderColor: '#dee2e6', boxShadow: 'none' }) }}
+                                        />
+                                    ) : (
+                                        <div className="form-text text-muted">
+                                            {i18n.language === 'fr'
+                                                ? 'Veuillez renseigner la date de naissance pour sélectionner les parents.'
+                                                : i18n.language === 'ar'
+                                                    ? 'الرجاء إدخال تاريخ الميلاد لاختيار الوالدين.'
+                                                    : 'Please enter birth date to select parents.'}
+                                        </div>
+                                    )}
                                 </div>
                                 <div className="col-md-6">
                                     <label className="form-label small text-muted">{t('userForm.labels.mother')}</label>
-                                    <Select
-                                        isClearable
-                                        classNamePrefix="select"
-                                        options={motherOptions}
-                                        placeholder={t('userForm.placeholders.selectMother')}
-                                        value={motherOptions.find(o => o.value === motherId) ?? null}
-                                        onChange={(opt) => setMotherId(opt ? (opt as { value: number; label: string }).value : null)}
-                                        styles={{ control: (base) => ({ ...base, borderColor: '#dee2e6', boxShadow: 'none' }) }}
-                                    />
+                                    {birthdayReady ? (
+                                        <Select
+                                            isClearable
+                                            classNamePrefix="select"
+                                            options={motherOptions}
+                                            placeholder={t('userForm.placeholders.selectMother')}
+                                            value={motherOptions.find(o => o.value === motherId) ?? null}
+                                            onChange={(opt) => setMotherId(opt ? (opt as { value: number; label: string }).value : null)}
+                                            styles={{ control: (base) => ({ ...base, borderColor: '#dee2e6', boxShadow: 'none' }) }}
+                                        />
+                                    ) : (
+                                        <div className="form-text text-muted">
+                                            {i18n.language === 'fr'
+                                                ? 'Veuillez renseigner la date de naissance pour sélectionner les parents.'
+                                                : i18n.language === 'ar'
+                                                    ? 'الرجاء إدخال تاريخ الميلاد لاختيار الوالدين.'
+                                                    : 'Please enter birth date to select parents.'}
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         </div>
@@ -612,15 +723,18 @@ export default function AddUserForm({
                         <div className="mb-4">
                             <div className="d-flex align-items-center justify-content-between mb-3 border-bottom pb-2">
                                 <h6 className="text-uppercase text-secondary fw-bold fs-7 mb-0">
-                                    <i className="bi bi-diagram-3 me-2 text-primary"></i>{t('userForm.sections.roles')}
+                                    <i className="bi bi-diagram-3 me-2 text-primary"></i>{t('userForm.sections.roles')} <span className="text-danger">*</span>
                                 </h6>
                                 <i className="bi bi-info-circle text-muted" onClick={() => setHelpKey('roles')} style={{ cursor: 'pointer' }}></i>
                             </div>
 
                             <div className="d-flex flex-wrap gap-2">
-                                {(allowedRoleNames && allowedRoleNames.length > 0
-                                    ? allRoles.filter(r => allowedRoleNames.map(n => n.toLowerCase()).includes(String(r.role).toLowerCase()))
-                                    : allRoles
+                                {(
+                                    (allowedRoleNames && allowedRoleNames.length > 0
+                                        ? allRoles.filter(r => allowedRoleNames.map(n => n.toLowerCase()).includes(String(r.role).toLowerCase()))
+                                        : allRoles
+                                    )
+                                    .filter(r => String(r.role).toLowerCase() !== 'user')
                                 ).map(role => {
                                     const isSelected = selectedRoleIds.includes(role.id);
                                     return (
@@ -638,7 +752,7 @@ export default function AddUserForm({
                                                     readOnly
                                                 />
                                                 <label className={`form-check-label user-select-none fw-medium ${isSelected ? 'text-primary' : 'text-secondary'}`} style={{ cursor: 'pointer' }} htmlFor={`role-${role.id}`}>
-                                                    {role.role}
+                                                    {getRoleLabel(role.role)}
                                                 </label>
                                             </div>
                                         </div>
