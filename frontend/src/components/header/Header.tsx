@@ -194,6 +194,12 @@ function Header() {
                 <Link to="/" className="logo navbar-brand fw-semibold">
                     KASSA
                 </Link>
+                {/* Mobile Notification - Visible only on small screens */}
+                {isAuth && (
+                    <div className="d-lg-none mx-auto d-flex align-items-center">
+                        <Notifications />
+                    </div>
+                )}
                 <button
                     className="navbar-toggler"
                     type="button"
@@ -308,9 +314,11 @@ function Header() {
                         <li className="nav-item d-flex align-items-center">
                             <LanguageSwitcher />
                         </li>
-                        {/* Notifications */}
+                        {/* Notifications - Desktop only */}
                         {isAuth && (
-                            <Notifications />
+                            <li className="nav-item d-none d-lg-block">
+                                <Notifications />
+                            </li>
                         )}
                     </ul>
                 </div>

@@ -218,8 +218,8 @@ async def notify_transactions_validated(cursor, tx_ids: List[int]):
         JOIN role_attribution ra ON ra.users_id = u.id
         JOIN roles r ON r.id = ra.roles_id
         WHERE u.id IN ({placeholders_u})
-          AND u.isactive = 1
-          AND r.role = 'member'
+        AND u.isactive = 1
+        AND r.role = 'member'
     """
     await cursor.execute(check_sql, tuple(all_user_ids))
     valid_rows = await cursor.fetchall()
