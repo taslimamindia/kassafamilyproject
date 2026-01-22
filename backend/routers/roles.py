@@ -193,8 +193,8 @@ async def assign_role(
 
     if not is_admin:
         if is_group_admin:
-            # Group admin can only assign 'admingroup' or 'user' within their group
-            if role_name not in {"admingroup", "user"}:
+            # Group admin can only assign specific roles within their group
+            if role_name not in {"admingroup", "user", "member", "norole"}:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Role not allowed for group admin",
@@ -288,7 +288,7 @@ async def assign_role_bulk(
     # Permission check logic
     if not is_admin:
         if is_group_admin:
-            if role_name not in {"admingroup", "user"}:
+            if role_name not in {"admingroup", "user", "member", "norole"}:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Role not allowed for group admin",

@@ -16,7 +16,7 @@ export async function apiFetch(path: string, init: RequestInit = {}): Promise<Re
     const res = await fetch(`${API_BASE_URL}${path}`, { ...init, headers })
     // Avoid auto-redirect handling for auth endpoints (login / first-login change)
     const isAuthPath = path.startsWith('/auth')
-    if ((res.status === 401 || res.status === 403) && !isAuthPath) {
+    if (res.status === 401 && !isAuthPath) {
         try {
             localStorage.removeItem('access_token')
             try { window.dispatchEvent(new Event('auth-changed')) } catch {}
@@ -79,7 +79,7 @@ export const axiosClient: AxiosInstance = (() => {
             const status = err?.response?.status
             const path = err?.config?.url ?? ''
             const isAuthPath = path.startsWith('/auth')
-            if ((status === 401 || status === 403) && !isAuthPath) {
+            if (status === 401 && !isAuthPath) {
                 try {
                     localStorage.removeItem('access_token')
                     try { window.dispatchEvent(new Event('auth-changed')) } catch {}

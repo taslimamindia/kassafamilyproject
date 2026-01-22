@@ -694,6 +694,7 @@ async def update_user_by_id(
                 )
         fields.append("image_url = %s")
         values.append(None)
+        
     elif body.image_url is not None and upload is None:
         fields.append("image_url = %s")
         values.append(body.image_url)
@@ -701,9 +702,16 @@ async def update_user_by_id(
     if body.isactive is not None:
         fields.append("isactive = %s")
         values.append(body.isactive)
+
     if body.isfirstlogin is not None:
         fields.append("isfirstlogin = %s")
         values.append(body.isfirstlogin)
+        # Reset password to default if isfirstlogin set to 1
+        if body.isfirstlogin == 1:
+            from auth_utils import hash_password
+            new_pass_hash = hash_password(settings.user_password_default)
+            fields.append("password = %s")
+            values.append(new_pass_hash)
 
     fields.append("updatedby = %s")
     values.append(current_user["id"])

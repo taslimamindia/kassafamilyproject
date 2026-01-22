@@ -46,7 +46,7 @@ export default function Notifications() {
 	const [dropdownStyle, setDropdownStyle] = useState<React.CSSProperties>({})
 	const [listMaxHeight, setListMaxHeight] = useState<number | undefined>(undefined)
 	const navigate = useNavigate()
-	const containerRef = useRef<HTMLLIElement>(null)
+	const containerRef = useRef<HTMLDivElement>(null)
 	const dropdownRef = useRef<HTMLDivElement>(null)
 	const lastIdRef = useRef(0)
 
@@ -213,7 +213,7 @@ export default function Notifications() {
 
 	return (
 		<>
-		<li className="nav-item dropdown notifications-root" ref={containerRef}>
+		<div className="dropdown notifications-root" ref={containerRef}>
 			<button
 				className="btn nav-link d-flex align-items-center gap-2 position-relative"
 				onClick={() => setOpen(v => !v)}
@@ -272,7 +272,7 @@ export default function Notifications() {
 					</div>
 				</div>
 			)}
-		</li>
+		</div>
 		{chatOpen && <Chat onClose={() => setChatOpen(false)} />}
 
 		<Modal isOpen={showModal} onClose={() => { setShowModal(false); setModalMessage(null) }}>

@@ -226,7 +226,7 @@ async def setup_database(cursor = Depends(get_cursor), current_user: dict = Depe
         children = [
             (
                 3,
-                "Thierno Mahamoudou",
+                "Thierno Mamoudou Foulah",
                 "Barry",
                 "thierno",
                 hash_password(settings.user_password_default),
