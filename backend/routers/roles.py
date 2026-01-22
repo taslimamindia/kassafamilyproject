@@ -199,25 +199,19 @@ async def assign_role(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Role not allowed for group admin",
                 )
-            # Check target user is in same group
-            await cursor.execute(
-                "SELECT id, id_father, id_mother FROM users WHERE id = %s",
-                (body.users_id,),
-            )
-            target = await cursor.fetchone()
-            fid = current_user.get("id_father")
-            mid = current_user.get("id_mother")
-            same_group = False
-            if target:
-                if fid is not None and (
-                    target.get("id_father") == fid or target.get("id") == fid
-                ):
-                    same_group = True
-                if mid is not None and (
-                    target.get("id_mother") == mid or target.get("id") == mid
-                ):
-                    same_group = True
-            if not same_group and (target or {}).get("id") != current_user.get("id"):
+            # Check if target user is managed by this admingroup user (or is the user themselves)
+            allowed = False
+            if int(body.users_id) == int(current_user["id"]):
+                allowed = True
+            else:
+                await cursor.execute(
+                    "SELECT 1 FROM family_assignation WHERE users_responsable_id = %s AND users_assigned_id = %s",
+                    (current_user["id"], body.users_id),
+                )
+                if await cursor.fetchone():
+                    allowed = True
+
+            if not allowed:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Target user not in your group",
@@ -499,24 +493,23 @@ async def remove_role_from_user(
         if not r:
             return {"status": "deleted", "user_id": user_id, "role_id": role_id}
         role_name = str(r.get("role")).lower()
-        if role_name not in {"admingroup", "user"}:
+        if role_name not in {"admingroup", "user", "member"}:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden"
             )
-        await cursor.execute(
-            "SELECT id, id_father, id_mother FROM users WHERE id = %s", (user_id,)
-        )
-        u = await cursor.fetchone()
-        if not u:
-            return {"status": "deleted", "user_id": user_id, "role_id": role_id}
-        fid = current_user.get("id_father")
-        mid = current_user.get("id_mother")
-        same_group = False
-        if fid is not None and (u.get("id_father") == fid or u.get("id") == fid):
-            same_group = True
-        if mid is not None and (u.get("id_mother") == mid or u.get("id") == mid):
-            same_group = True
-        if not same_group and u.get("id") != current_user.get("id"):
+
+        allowed = False
+        if user_id == int(current_user["id"]):
+            allowed = True
+        else:
+            await cursor.execute(
+                "SELECT 1 FROM family_assignation WHERE users_responsable_id = %s AND users_assigned_id = %s",
+                (current_user["id"], user_id),
+            )
+            if await cursor.fetchone():
+                allowed = True
+
+        if not allowed:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden"
             )
@@ -528,8 +521,6 @@ async def remove_role_from_user(
         await cursor.commit()
     except Exception:
         logger.exception("[roles] Commit failed during remove_role_from_user")
-        from fastapi import HTTPException, status
-
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Database commit failed",
