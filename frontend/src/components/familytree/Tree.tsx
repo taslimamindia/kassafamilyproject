@@ -16,13 +16,23 @@ import { fetchRawUsers, type RawUser } from '@src/services/tree';
 import 'reactflow/dist/style.css';
 import './Tree.css';
 
-const UserAvatar = ({ url, firstname, lastname }: { url: string | null, firstname: string, lastname: string }) => {
+const UserAvatar = ({ url, firstname, lastname, size = 60 }: { url: string | null, firstname: string, lastname: string, size?: number }) => {
+    const style: React.CSSProperties = {
+        width: size,
+        height: size,
+        objectFit: 'cover',
+        borderRadius: '50%',
+        border: '3px solid #fff',
+        boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+        display: 'block'
+    }
+
     if (url) {
-        return <img src={url} alt={firstname} className="node-avatar rounded-circle" />;
+        return <img src={url} alt={firstname} className={`node-avatar rounded-circle ${size > 100 ? 'large-avatar' : ''}`} style={style} />;
     }
     const initials = `${firstname.charAt(0)}${lastname.charAt(0)}`.toUpperCase();
     return (
-        <div className="node-avatar-placeholder rounded-circle d-flex align-items-center justify-content-center bg-secondary text-white">
+        <div className={`node-avatar-placeholder rounded-circle d-flex align-items-center justify-content-center bg-secondary text-white ${size > 100 ? 'large-avatar' : ''}`} style={style}>
             {initials}
         </div>
     );
@@ -381,37 +391,47 @@ const TreeContent = () => {
 
             {showModal && selectedUser && (
                 <>
-                    <div className="modal fade show d-block" tabIndex={-1} role="dialog" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
+                    <div className="modal fade show d-block" tabIndex={-1} role="dialog" style={{ backgroundColor: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(3px)' }}>
                         <div className="modal-dialog modal-dialog-centered" role="document">
-                            <div className="modal-content">
-                                <div className="modal-header">
-                                    <h5 className="modal-title">Détails de {selectedUser.firstname}</h5>
+                            <div className="modal-content border-0 shadow rounded-4">
+                                <div className="modal-header border-0">
+                                    <h5 className="modal-title fw-bold">Détails de {selectedUser.firstname}</h5>
                                     <button type="button" className="btn-close" onClick={closeModal}></button>
                                 </div>
-                                <div className="modal-body">
-                                    <div className="text-center mb-3">
-                                        <UserAvatar url={selectedUser.image_url} firstname={selectedUser.firstname} lastname={selectedUser.lastname} />
-                                        <h4 className="mt-2">{selectedUser.firstname} {selectedUser.lastname}</h4>
-                                        <span className="badge bg-info text-dark">{selectedUser.role}</span>
+                                <div className="modal-body px-4">
+                                    <div className="text-center mb-4">
+                                        <UserAvatar url={selectedUser.image_url} firstname={selectedUser.firstname} lastname={selectedUser.lastname} size={200} />
+                                        <h3 className="mt-3 fw-bold">{selectedUser.firstname} {selectedUser.lastname}</h3>
                                     </div>
 
-                                    <ul className="list-group list-group-flush">
-                                        <li className="list-group-item d-flex justify-content-between">
-                                            <strong>Date de naissance:</strong>
-                                            <span>{selectedUser.birthday || 'N/A'}</span>
-                                        </li>
-                                        <li className="list-group-item d-flex justify-content-between">
-                                            <strong>Père:</strong>
-                                            <span>{selectedUser.father_name || 'Non renseigné'}</span>
-                                        </li>
-                                        <li className="list-group-item d-flex justify-content-between">
-                                            <strong>Mère:</strong>
-                                            <span>{selectedUser.mother_name || 'Non renseigné'}</span>
-                                        </li>
-                                    </ul>
+                                    <div className="card border-0 bg-light rounded-4">
+                                        <div className="card-body p-3">
+                                            <div className="d-flex align-items-center mb-3 p-2 bg-white rounded shadow-sm">
+                                                <div className="me-3 fs-3">🎂</div>
+                                                <div>
+                                                    <small className="text-muted fw-bold d-block" style={{ fontSize: '0.75rem' }}>DATE DE NAISSANCE</small>
+                                                    <span className="fw-medium">{selectedUser.birthday || 'N/A'}</span>
+                                                </div>
+                                            </div>
+                                            <div className="d-flex align-items-center mb-3 p-2 bg-white rounded shadow-sm">
+                                                <div className="me-3 fs-3">👨‍👦</div>
+                                                <div>
+                                                    <small className="text-muted fw-bold d-block" style={{ fontSize: '0.75rem' }}>PÈRE</small>
+                                                    <span className="fw-medium">{selectedUser.father_name || 'Non renseigné'}</span>
+                                                </div>
+                                            </div>
+                                            <div className="d-flex align-items-center p-2 bg-white rounded shadow-sm">
+                                                <div className="me-3 fs-3">👩‍👦</div>
+                                                <div>
+                                                    <small className="text-muted fw-bold d-block" style={{ fontSize: '0.75rem' }}>MÈRE</small>
+                                                    <span className="fw-medium">{selectedUser.mother_name || 'Non renseigné'}</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
-                                <div className="modal-footer">
-                                    <button type="button" className="btn btn-secondary" onClick={closeModal}>Fermer</button>
+                                <div className="modal-footer border-0 justify-content-center pb-4">
+                                    <button type="button" className="btn btn-primary px-5 rounded-pill fw-bold shadow-sm" onClick={closeModal}>Fermer</button>
                                 </div>
                             </div>
                         </div>
