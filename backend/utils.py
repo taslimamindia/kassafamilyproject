@@ -45,6 +45,8 @@ async def parse_create_request(request: Request) -> Tuple[dict, Optional[UploadF
                 "id_mother": _int("id_mother"),
                 "isactive": _int("isactive"),
                 "isfirstlogin": _int("isfirstlogin"),
+                "contribution_tier": _opt("contribution_tier"),
+                "role": _opt("role"),
             }
             upload = form.get("file")
             logger.info(

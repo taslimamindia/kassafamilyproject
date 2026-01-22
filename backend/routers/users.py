@@ -315,20 +315,9 @@ async def create_user(
                 body.isactive = 0
 
     default_hashed = hash_password(settings.user_password_default)
-    # Authorization for creation: admin anytime; group admin only within their group; others forbidden
+    # Authorization for creation: admin anytime; group admin allowed; others forbidden
     if not await has_role(cursor, current_user["id"], "admin"):
-        if await has_role(cursor, current_user["id"], "admingroup"):
-            fid = current_user.get("id_father")
-            mid = current_user.get("id_mother")
-            if not (
-                (fid is not None and body.id_father == fid)
-                or (mid is not None and body.id_mother == mid)
-            ):
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Cannot create user outside your group",
-                )
-        else:
+        if not await has_role(cursor, current_user["id"], "admingroup"):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden"
             )
@@ -402,6 +391,39 @@ async def create_user(
         )
 
     new_id = cursor.lastrowid or next_user_id
+
+    # Handle optional role assignment on creation
+    input_role = data.get("role")
+    if input_role:
+        r_str = str(input_role).lower().strip()
+        if r_str != "norole":
+            # Check if role exists
+            await cursor.execute("SELECT id FROM roles WHERE role = %s", (r_str,))
+            r_row = await cursor.fetchone()
+            if r_row:
+                rid = r_row["id"] if isinstance(r_row, dict) else r_row[0]
+                # Permission check
+                is_adm = await has_role(cursor, current_user["id"], "admin")
+                is_grp = await has_role(cursor, current_user["id"], "admingroup")
+
+                allowed = False
+                if is_adm:
+                    allowed = True
+                elif is_grp and r_str in ("admingroup", "user", "member"):
+                    allowed = True
+
+                if allowed:
+                    try:
+                        await cursor.execute(
+                            "INSERT INTO role_attribution (users_id, roles_id) VALUES (%s, %s)",
+                            (new_id, rid),
+                        )
+                        await cursor.commit()
+                    except Exception:
+                        logger.error(
+                            f"[users] Failed to assign role {r_str} to {new_id}"
+                        )
+
     # Auto-assignments when created by a group admin
     try:
         if await has_role(cursor, current_user["id"], "admingroup"):
@@ -415,12 +437,16 @@ async def create_user(
             exists_self = await cursor.fetchone()
 
             # Determine next id for family_assignation (schema may not auto-increment)
-            await cursor.execute("SELECT COALESCE(MAX(id), 0) AS max_id FROM family_assignation")
+            await cursor.execute(
+                "SELECT COALESCE(MAX(id), 0) AS max_id FROM family_assignation"
+            )
             row_max = await cursor.fetchone() or {"max_id": 0}
             next_fa_id = int(row_max.get("max_id") or 0) + 1
 
             if not exists_self:
-                assignments_to_insert.append((next_fa_id, new_id, int(current_user["id"])))
+                assignments_to_insert.append(
+                    (next_fa_id, new_id, int(current_user["id"]))
+                )
                 next_fa_id += 1
 
             # Find co-responsables (role admingroup) who share at least one assigned user with current admingroup
@@ -488,10 +514,16 @@ async def create_user(
         )
         admin_rows = await cursor.fetchall()
         admin_ids = [r["users_id"] if isinstance(r, dict) else r[0] for r in admin_rows]
-        
+
         user_name = f"{body.firstname} {body.lastname}".strip()
         msg = f"Un nouvel utilisateur {user_name} a été créé."
-        await send_notification(cursor, admin_ids, msg, sender_id=current_user["id"], link=f"/users/{new_id}")
+        await send_notification(
+            cursor,
+            admin_ids,
+            msg,
+            sender_id=current_user["id"],
+            link=f"/users/{new_id}",
+        )
     except Exception as e:
         logger.warning(f"[users] Failed to notify admins about new user: {e}")
 
@@ -515,7 +547,8 @@ async def bulk_update_user_tier(
 
     # Only admin can do bulk update for now
     if not await has_role(cursor, current_user["id"], "admin") and not await has_role(
-        cursor, current_user["id"], "admingroup"):
+        cursor, current_user["id"], "admingroup"
+    ):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
 
     if not body.user_ids:
@@ -532,7 +565,9 @@ async def bulk_update_user_tier(
         try:
             await update_users_graph(request.app, cursor)
         except Exception:
-            logger.exception("[users] Failed to refresh users graph after bulk tier update")
+            logger.exception(
+                "[users] Failed to refresh users graph after bulk tier update"
+            )
     except Exception as e:
         logger.error(f"Error updating bulk tiers: {e}")
         raise HTTPException(status_code=500, detail="Database error")
@@ -694,7 +729,7 @@ async def update_user_by_id(
                 )
         fields.append("image_url = %s")
         values.append(None)
-        
+
     elif body.image_url is not None and upload is None:
         fields.append("image_url = %s")
         values.append(body.image_url)
@@ -709,6 +744,7 @@ async def update_user_by_id(
         # Reset password to default if isfirstlogin set to 1
         if body.isfirstlogin == 1:
             from auth_utils import hash_password
+
             new_pass_hash = hash_password(settings.user_password_default)
             fields.append("password = %s")
             values.append(new_pass_hash)
@@ -826,7 +862,9 @@ async def delete_user_by_id(
                 try:
                     await update_users_graph(request.app, cursor)
                 except Exception:
-                    logger.exception("[users] Failed to refresh users graph after hard delete")
+                    logger.exception(
+                        "[users] Failed to refresh users graph after hard delete"
+                    )
             return {"status": "deleted", "id": user_id}
         except Exception as e:
             logger.exception("[users] Hard delete failed")
@@ -849,7 +887,9 @@ async def delete_user_by_id(
             try:
                 await update_users_graph(request.app, cursor)
             except Exception:
-                logger.exception("[users] Failed to refresh users graph after soft delete")
+                logger.exception(
+                    "[users] Failed to refresh users graph after soft delete"
+                )
     except Exception:
         logger.exception("[users] Commit failed during delete_user_by_id")
         raise HTTPException(
@@ -1029,7 +1069,9 @@ async def update_current_user_profile(
         try:
             await update_users_graph(request.app, cursor)
         except Exception:
-            logger.exception("[users] Failed to refresh users graph after current user profile update")
+            logger.exception(
+                "[users] Failed to refresh users graph after current user profile update"
+            )
     except Exception:
         logger.exception("[users] Commit failed during update_current_user_profile")
         raise HTTPException(
@@ -1083,10 +1125,14 @@ async def get_parents_by_user_id(
     Public endpoint: returns father and mother for a given user id in a single call.
     Response: { father: User | null, mother: User | null }
     """
-    await cursor.execute("SELECT id_father, id_mother FROM users WHERE id = %s", (user_id,))
+    await cursor.execute(
+        "SELECT id_father, id_mother FROM users WHERE id = %s", (user_id,)
+    )
     row = await cursor.fetchone()
     if not row:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
+        )
 
     fid = row.get("id_father") if isinstance(row, dict) else row[0]
     mid = row.get("id_mother") if isinstance(row, dict) else row[1]
