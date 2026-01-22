@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { listTransactions, approveTransaction, type Transaction } from '../../services/transactions'
+import { listTransactions, approveTransaction, rejectTransaction, type Transaction } from '../../services/transactions'
 import { getCurrentUser, type User } from '../../services/users'
 import './TransactionApprovals.css'
 import Modal from '../common/Modal'
@@ -18,6 +18,12 @@ export default function TransactionApprovals() {
     const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
     const [approving, setApproving] = useState(false)
     const [showConfirmBatch, setShowConfirmBatch] = useState(false)
+    const [viewProofUrl, setViewProofUrl] = useState<string | null>(null)
+    
+    // Rejection state
+    const [rejectModalOpen, setRejectModalOpen] = useState(false)
+    const [rejectTxId, setRejectTxId] = useState<number | null>(null)
+    const [rejectReason, setRejectReason] = useState('')
 
     useEffect(() => {
         let mounted = true
@@ -82,6 +88,44 @@ export default function TransactionApprovals() {
             setSelectedIds(new Set())
         } else {
             setSelectedIds(new Set(transactions.map(t => t.id)))
+        }
+    }
+
+    const handleRejectClick = (id: number) => {
+        setRejectTxId(id)
+        setRejectReason('')
+        setRejectModalOpen(true)
+    }
+
+    const confirmReject = async () => {
+        if (!rejectTxId) return
+        if (!rejectReason.trim()) {
+            alert("Veuillez indiquer le motif du rejet")
+            return
+        }
+        
+        // Word count check
+        const words = rejectReason.trim().split(/\s+/)
+        if (words.length > 100) {
+            alert(`Le motif est trop long (${words.length} mots). Maximum 100 mots.`)
+            return
+        }
+
+        setApproving(true)
+        try {
+            await rejectTransaction(rejectTxId, rejectReason)
+            setTransactions(prev => prev.filter(t => t.id !== rejectTxId))
+            const newSet = new Set(selectedIds)
+            if (newSet.has(rejectTxId)) {
+                newSet.delete(rejectTxId)
+                setSelectedIds(newSet)
+            }
+            setRejectModalOpen(false)
+        } catch (e) {
+            console.error("Rejection failed", e)
+            alert("Une erreur est survenue lors du rejet")
+        } finally {
+            setApproving(false)
         }
     }
 
@@ -217,6 +261,33 @@ export default function TransactionApprovals() {
                                         <div>
                                             <div className="fw-bold">{tx.user_firstname} {tx.user_lastname}</div>
                                             <div className="small text-muted">{t(`transactionTypes.${tx.transaction_type}`)} • {tx.payment_method_name}</div>
+                                            {tx.proof_reference && (
+                                                <div className="mt-2">
+                                                    {(() => {
+                                                        const isLink = (tx.payment_method_type_of_proof === 'LINK') || 
+                                                            (tx.payment_method_type_of_proof === 'BOTH' && (tx.proof_reference.startsWith('http') || tx.proof_reference.includes('/'))) ||
+                                                            (!tx.payment_method_type_of_proof && (tx.proof_reference.startsWith('http') || tx.proof_reference.includes('/')));
+                                                        
+                                                        if (isLink) {
+                                                            return (
+                                                                <button 
+                                                                    className="btn btn-sm btn-light border d-flex align-items-center gap-2 p-1 pe-3 rounded-pill"
+                                                                    onClick={(e) => { e.stopPropagation(); setViewProofUrl(tx.proof_reference) }}
+                                                                >
+                                                                    <img src={tx.proof_reference} alt="" className="rounded-circle" style={{ width: '24px', height: '24px', objectFit: 'cover' }} />
+                                                                    <span className="small">Voir la preuve</span>
+                                                                </button>
+                                                            )
+                                                        }
+                                                        return (
+                                                            <div className="d-flex align-items-center gap-2 small text-muted">
+                                                                <i className="bi bi-hash"></i>
+                                                                <span className="font-monospace">{tx.proof_reference}</span>
+                                                            </div>
+                                                        )
+                                                    })()}
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
 
@@ -227,13 +298,22 @@ export default function TransactionApprovals() {
                                                 {Number(tx.amount).toLocaleString()}
                                             </div>
                                         </div>
-                                        <button
-                                            className="btn btn-outline-success btn-sm rounded-pill px-3"
-                                            onClick={() => handleApprove([tx.id])}
-                                            disabled={approving}
-                                        >
-                                            <i className="bi bi-check-lg me-1"></i> Valider
-                                        </button>
+                                        <div className="d-flex gap-2">
+                                            <button
+                                                className="btn btn-outline-danger btn-sm rounded-pill px-3"
+                                                onClick={() => handleRejectClick(tx.id)}
+                                                disabled={approving}
+                                            >
+                                                <i className="bi bi-x-lg me-1"></i> Rejeter
+                                            </button>
+                                            <button
+                                                className="btn btn-outline-success btn-sm rounded-pill px-3"
+                                                onClick={() => handleApprove([tx.id])}
+                                                disabled={approving}
+                                            >
+                                                <i className="bi bi-check-lg me-1"></i> Valider
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -259,6 +339,7 @@ export default function TransactionApprovals() {
                                 <th className="py-3">Type</th>
                                 <th className="py-3 text-end">Montant</th>
                                 <th className="py-3">Moyen de paiement</th>
+                                <th className="py-3">Preuve</th>
                                 <th className="py-3">Statut actuel</th>
                                 <th className="py-3">Approbations</th>
                                 <th className="py-3 text-end pe-3">Actions</th>
@@ -317,6 +398,32 @@ export default function TransactionApprovals() {
                                         </td>
                                         <td className="small">{tx.payment_method_name}</td>
                                         <td>
+                                            {(() => {
+                                                if (!tx.proof_reference) return <span className="text-muted small">-</span>
+                                                const isLink = (tx.payment_method_type_of_proof === 'LINK') || 
+                                                    (tx.payment_method_type_of_proof === 'BOTH' && (tx.proof_reference.startsWith('http') || tx.proof_reference.includes('/'))) ||
+                                                    (!tx.payment_method_type_of_proof && (tx.proof_reference.startsWith('http') || tx.proof_reference.includes('/')));
+                                                
+                                                if (isLink) {
+                                                    return (
+                                                        <div className="d-flex align-items-center gap-2">
+                                                            <img 
+                                                                src={tx.proof_reference} 
+                                                                alt="" 
+                                                                className="rounded border" 
+                                                                style={{ width: '36px', height: '36px', objectFit: 'cover', cursor: 'pointer' }} 
+                                                                onClick={() => setViewProofUrl(tx.proof_reference)}
+                                                            />
+                                                            <button className="btn btn-sm btn-light border py-0 px-1" onClick={() => setViewProofUrl(tx.proof_reference)} title="Voir la preuve">
+                                                                <i className="bi bi-eye"></i>
+                                                            </button>
+                                                        </div>
+                                                    )
+                                                }
+                                                return <span className="small font-monospace bg-white border px-2 py-1 rounded text-nowrap" style={{maxWidth: '120px', display: 'inline-block', overflow: 'hidden', textOverflow: 'ellipsis'}} title={tx.proof_reference}>{tx.proof_reference}</span>
+                                            })()}
+                                        </td>
+                                        <td>
                                             <span className={`status-badge status-${tx.status.toLowerCase()}`}>
                                                 {t(`transactionStatus.${tx.status}`)}
                                             </span>
@@ -334,14 +441,24 @@ export default function TransactionApprovals() {
                                             </div>
                                         </td>
                                         <td className="text-end pe-3">
-                                            <button
-                                                className="btn btn-sm btn-outline-success"
-                                                onClick={() => handleApprove([tx.id])}
-                                                disabled={approving}
-                                                title="Valider cette transaction"
-                                            >
-                                                <i className="bi bi-check-lg"></i>
-                                            </button>
+                                            <div className="d-flex justify-content-end gap-2">
+                                                <button
+                                                    className="btn btn-sm btn-outline-danger"
+                                                    onClick={() => handleRejectClick(tx.id)}
+                                                    disabled={approving}
+                                                    title="Rejeter cette transaction"
+                                                >
+                                                    <i className="bi bi-x-lg"></i>
+                                                </button>
+                                                <button
+                                                    className="btn btn-sm btn-outline-success"
+                                                    onClick={() => handleApprove([tx.id])}
+                                                    disabled={approving}
+                                                    title="Valider cette transaction"
+                                                >
+                                                    <i className="bi bi-check-lg"></i>
+                                                </button>
+                                            </div>
                                         </td>
                                     </tr>
                                 ))
@@ -359,6 +476,48 @@ export default function TransactionApprovals() {
                         <button className="btn btn-light" onClick={() => setShowConfirmBatch(false)}>Annuler</button>
                         <button className="btn btn-primary" onClick={() => handleApprove(Array.from(selectedIds))}>
                             Confirmer la validation
+                        </button>
+                    </div>
+                </div>
+            </Modal>
+
+            {viewProofUrl && (
+                <Modal isOpen={!!viewProofUrl} onClose={() => setViewProofUrl(null)} title="Preuve de transaction" size="lg">
+                    <div className="text-center p-2">
+                        <img src={viewProofUrl} alt="Preuve" className="img-fluid rounded" style={{ maxHeight: '80vh' }} />
+                        <div className="mt-3 text-end">
+                            <a href={viewProofUrl} target="_blank" rel="noopener noreferrer" className="btn btn-sm btn-outline-primary">
+                                <i className="bi bi-box-arrow-up-right me-2"></i> Ouvrir l'original
+                            </a>
+                        </div>
+                    </div>
+                </Modal>
+            )}
+
+            <Modal isOpen={rejectModalOpen} onClose={() => setRejectModalOpen(false)} title="Rejeter la transaction">
+                <div className="p-3">
+                    <p className="text-muted small mb-3">
+                        Veuillez indiquer le motif du rejet. Ce motif sera enregistré et visible. (Max 100 mots)
+                    </p>
+                    <textarea 
+                        className="form-control mb-2" 
+                        rows={4} 
+                        value={rejectReason}
+                        onChange={(e) => setRejectReason(e.target.value)}
+                        placeholder="Motif du rejet..."
+                    ></textarea>
+                    <div className="text-end text-muted small mb-3">
+                        {rejectReason.trim().split(/\s+/).filter(w => w.length > 0).length} / 100 mots
+                    </div>
+                    <div className="d-flex justify-content-end gap-2">
+                        <button className="btn btn-light" onClick={() => setRejectModalOpen(false)}>Annuler</button>
+                        <button 
+                            className="btn btn-danger" 
+                            onClick={confirmReject}
+                            disabled={approving || !rejectReason.trim()}
+                        >
+                            {approving ? <span className="spinner-border spinner-border-sm me-2"></span> : null}
+                            Confirmer le rejet
                         </button>
                     </div>
                 </div>
