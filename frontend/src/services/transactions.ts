@@ -44,6 +44,7 @@ export type Transaction = {
     recorded_by_firstname?: string
     recorded_by_lastname?: string
     payment_method_name?: string
+    payment_method_type_of_proof?: 'TRANSACTIONNUMBER' | 'LINK' | 'BOTH'
     approvals?: TransactionApproval[]
 }
 
@@ -184,6 +185,16 @@ export async function approveTransaction(txId: number, note?: string): Promise<{
     })
     if (!res.ok) throw new Error('POST /transactions/{id}/approvals failed')
     return (await res.json()) as { transaction: Transaction; approver_role: string | null }
+}
+
+export async function rejectTransaction(txId: number, reason?: string): Promise<Transaction> {
+    const res = await apiFetch(`/transactions/${txId}/reject`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason }),
+    })
+    if (!res.ok) throw new Error('POST /transactions/{id}/reject failed')
+    return (await res.json()) as Transaction
 }
 
 export async function deleteTransaction(id: number): Promise<{ status: string } | void> {

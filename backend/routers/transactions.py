@@ -148,6 +148,10 @@ class TransactionBulkApprove(BaseModel):
     note: Optional[str] = None
 
 
+class TransactionReject(BaseModel):
+    reason: Optional[str] = None
+
+
 class TransactionUpdate(BaseModel):
     amount: Optional[float] = None
     proof_reference: Optional[str] = None
@@ -472,7 +476,7 @@ async def list_transactions(
 		SELECT t.*, 
             u.username AS user_username, u.firstname AS user_firstname, u.lastname AS user_lastname, u.image_url AS user_image_url,
             rb.username AS recorded_by_username, rb.firstname AS recorded_by_firstname, rb.lastname AS recorded_by_lastname,
-			pm.name AS payment_method_name
+			pm.name AS payment_method_name, pm.type_of_proof AS payment_method_type_of_proof
 		FROM transactions t
 		JOIN users u ON u.id = t.users_id
 		JOIN users rb ON rb.id = t.recorded_by_id
@@ -660,6 +664,7 @@ async def create_transaction(
 @router.post("/transactions/proof-upload")
 async def upload_transaction_proof(
     file: UploadFile = File(...),
+    tx_id: Optional[int] = Form(None),
     cursor=Depends(get_cursor),
     current_user: dict = Depends(get_current_user),
 ):
@@ -669,26 +674,31 @@ async def upload_transaction_proof(
     Returns the public URL and the S3 key.
     """
     # Require elevated role to upload proofs (same as creating transactions)
+    # Note: Regular members need to upload proofs for their contributions too.
     if not (
         await has_role(cursor, current_user["id"], "admin")
         or await has_role(cursor, current_user["id"], "admingroup")
         or await has_role(cursor, current_user["id"], "treasury")
         or await has_role(cursor, current_user["id"], "board")
+        or await has_role(cursor, current_user["id"], "member")
     ):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
 
-    # Determine next id from transactions for deterministic file naming
-    await cursor.execute("SELECT IFNULL(MAX(id), 0) + 1 AS next_id FROM transactions")
-    row = await cursor.fetchone()
-    if isinstance(row, dict):
-        next_id = int(row.get("next_id") or 1)
+    if tx_id:
+        filename = f"transaction_{tx_id}"
     else:
-        next_id = int(row[0] if row and len(row) > 0 else 1)
+        # Determine next id from transactions for deterministic file naming
+        await cursor.execute("SELECT IFNULL(MAX(id), 0) + 1 AS next_id FROM transactions")
+        row = await cursor.fetchone()
+        if isinstance(row, dict):
+            next_id = int(row.get("next_id") or 1)
+        else:
+            next_id = int(row[0] if row and len(row) > 0 else 1)
+        filename = f"transaction_{next_id}"
 
     aws = AwsFile(settings)
     try:
         # Determine filename: transactions/transaction_{next_id}
-        filename = f"transaction_{next_id}"
         result = aws.add_image(file, folder="transactions", filename=filename)
         return {"url": result.get("url"), "key": result.get("key")}
     except Exception as e:
@@ -1018,6 +1028,63 @@ async def submit_transaction(
         logger.exception("[transactions] Commit failed during submit_transaction")
         raise HTTPException(status_code=500, detail="Database commit failed")
 
+    await cursor.execute("SELECT * FROM transactions WHERE id = %s", (tx_id,))
+    return await cursor.fetchone()
+
+
+@router.post("/transactions/{tx_id}/reject")
+async def reject_transaction(
+    tx_id: int,
+    body: TransactionReject,
+    cursor=Depends(get_cursor),
+    current_user: dict = Depends(get_current_user),
+):
+    """Reject a transaction."""
+    await cursor.execute("SELECT * FROM transactions WHERE id = %s", (tx_id,))
+    tx = await cursor.fetchone()
+    if not tx:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    
+    # Identify user role suitable for this transaction type
+    user_roles_list = await get_user_roles(cursor, current_user["id"]) or []
+    user_roles = set(r.lower() for r in user_roles_list)
+    tx_type = (tx["transaction_type"] or "").upper()
+
+    rec_role = None
+    allowed = False
+    
+    if tx_type == "EXPENSE":
+        if "board" in user_roles: rec_role, allowed = "board", True
+        elif "admin" in user_roles: rec_role, allowed = "board", True # Admin acts as board
+    elif tx_type in ("CONTRIBUTION", "DONATIONS"):
+        if "treasury" in user_roles: rec_role, allowed = "treasury", True
+        elif "admin" in user_roles: rec_role, allowed = "treasury", True # Admin acts as treasury
+    else:
+        # Fallback or other types if exist
+        if "admin" in user_roles: rec_role, allowed = "admin", True
+    
+    if not allowed or not rec_role:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+
+    now = datetime.now()
+    
+    # 1. Archive the rejection note in transaction_approvals (even though it's a rejection)
+    # The requirement is explicit: "stocker cette note dans transaction_approvals.note"
+    # We use the determined role.
+    if body.reason:
+        await cursor.execute(
+            """INSERT INTO transaction_approvals (role_at_approval, approved_at, note, transactions_id, users_id)
+               VALUES (%s, %s, %s, %s, %s)""",
+            (rec_role, now, f"REJETÉ: {body.reason}", tx_id, current_user["id"])
+        )
+
+    # 2. Update status to REJECTED
+    await cursor.execute(
+        "UPDATE transactions SET status = 'REJECTED', updated_by = %s, updated_at = %s WHERE id = %s",
+        (current_user["id"], now, tx_id),
+    )
+    await cursor.commit()
+    
     await cursor.execute("SELECT * FROM transactions WHERE id = %s", (tx_id,))
     return await cursor.fetchone()
 
