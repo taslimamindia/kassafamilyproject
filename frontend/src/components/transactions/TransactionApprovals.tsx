@@ -231,7 +231,7 @@ export default function TransactionApprovals() {
                     ) : (
                         displayTransactions.map(tx => (
                             <div key={tx.id} className="card border-0 shadow-sm mb-3 rounded-4">
-                                <div className="card-body">
+                                <div className="card-body px-1 py-2 p-md-3">
                                     <div className="d-flex justify-content-between align-items-start mb-3">
                                         <div className="form-check">
                                             <input
@@ -298,16 +298,16 @@ export default function TransactionApprovals() {
                                                 {Number(tx.amount).toLocaleString()}
                                             </div>
                                         </div>
-                                        <div className="d-flex gap-2">
+                                        <div className="d-flex gap-1 gap-md-2">
                                             <button
-                                                className="btn btn-outline-danger btn-sm rounded-pill px-3"
+                                                className="btn btn-outline-danger btn-sm rounded-pill px-2 px-md-3"
                                                 onClick={() => handleRejectClick(tx.id)}
                                                 disabled={approving}
                                             >
                                                 <i className="bi bi-x-lg me-1"></i> Rejeter
                                             </button>
                                             <button
-                                                className="btn btn-outline-success btn-sm rounded-pill px-3"
+                                                className="btn btn-outline-success btn-sm rounded-pill px-2 px-md-3"
                                                 onClick={() => handleApprove([tx.id])}
                                                 disabled={approving}
                                             >

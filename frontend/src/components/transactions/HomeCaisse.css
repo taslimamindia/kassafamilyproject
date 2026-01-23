@@ -123,3 +123,12 @@
 .table tbody tr:hover td {
     background-color: #f8fafc;
 }
+
+@media (max-width: 767.98px) {
+    .kpi-card, .chart-card {
+        padding: 0.25rem;
+    }
+    .kpi-metric {
+        font-size: 1.5rem;
+    }
+}

@@ -109,7 +109,7 @@ export default function Transactions() {
             </div>
 
             <div className="card mb-4 border-0 shadow-sm filter-card">
-                <div className="card-body p-4">
+                <div className="card-body px-1 py-3 p-md-4">
                     <div className="row g-3 align-items-end">
                         <div className="col-12 col-md-4 col-lg-2">
                             <label className="form-label small text-muted fw-bold">{t('transactions.home.status')}</label>
