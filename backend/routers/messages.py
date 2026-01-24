@@ -1,10 +1,60 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import List, Optional
 from datetime import datetime
+import httpx
 from dependencies import get_cursor, get_current_user
 from models import Message, MessageCreate, MessageUserInfo
+from settings import settings
+
 
 router = APIRouter()
+
+
+async def validate_message_with_ai(content: str) -> bool:
+    if not settings.fireworks_api_key:
+        return True
+
+    url = "https://api.fireworks.ai/inference/v1/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {settings.fireworks_api_key}",
+        "Content-Type": "application/json"
+    }
+    
+    prompt = (
+        "Classify the following message as SAFE or UNSAFE.\n"
+        "SAFE: Appropriate content.\n"
+        "UNSAFE: Hate speech, violence, sexual content, harassment.\n"
+        "Reply ONLY with the word SAFE or UNSAFE. Do not provide explanations.\n\n"
+        f"Message: \"{content}\""
+    )
+    
+    payload = {
+        "model": settings.fireworks_model_name or "accounts/fireworks/models/llama-v3-8b-instruct",
+        "messages": [
+            {"role": "user", "content": prompt}
+        ],
+        "max_tokens": 1000,
+        "temperature": 0.0
+    }
+
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.post(url, json=payload, headers=headers, timeout=10.0)
+            if response.status_code == 200:
+                result = response.json()
+                if "choices" in result and len(result["choices"]) > 0:
+                    message_obj = result["choices"][0]["message"]
+                    # Get content safely
+                    answer = message_obj.get("content", "") or ""
+                    answer = answer.strip().upper()
+                    
+                    # Check for UNSAFE
+                    if "UNSAFE" in answer:
+                        return False
+            return False
+    except Exception as e:
+        return False
+
 
 @router.get("/messages", response_model=List[Message])
 async def get_my_messages(
@@ -33,6 +83,7 @@ async def get_my_messages(
     rows = await cursor.fetchall()
     return rows
 
+
 @router.put("/messages/{message_id}/read")
 async def mark_message_read(message_id: int, cursor = Depends(get_cursor), current_user: dict = Depends(get_current_user)):
     user_id = current_user["id"]
@@ -52,6 +103,7 @@ async def mark_message_read(message_id: int, cursor = Depends(get_cursor), curre
     await cursor.commit()
     return {"status": "success"}
 
+
 @router.put("/messages/read-all")
 async def mark_all_messages_read(cursor = Depends(get_cursor), current_user: dict = Depends(get_current_user)):
     user_id = current_user["id"]
@@ -63,14 +115,19 @@ async def mark_all_messages_read(cursor = Depends(get_cursor), current_user: dic
     await cursor.commit()
     return {"status": "success"}
 
+
 @router.post("/messages")
 async def send_message(msg: MessageCreate, cursor = Depends(get_cursor), current_user: dict = Depends(get_current_user)):
+    # AI Moderation Check
+    if not await validate_message_with_ai(msg.message):
+        raise HTTPException(status_code=400, detail="Le contenu du message est inapproprié et a été bloqué.")
+
     user_id = current_user["id"]
     target_users_ids = []
 
     if msg.recipient_type == 'member':
         if not msg.recipient_id:
-            raise HTTPException(status_code=400, detail="Recipient ID is required for member message")
+            raise HTTPException(status_code=400, detail="Le champ recipient_id est requis pour les membres.")
         # recipient_id may be a single int or a list of ints
         if isinstance(msg.recipient_id, list):
             target_users_ids.extend(msg.recipient_id)
@@ -84,7 +141,7 @@ async def send_message(msg: MessageCreate, cursor = Depends(get_cursor), current
         }
         role_name = role_map.get(msg.recipient_type)
         if not role_name:
-            raise HTTPException(status_code=400, detail="Invalid recipient type")
+            raise HTTPException(status_code=400, detail="Type de destinataire invalide")
         
         # Find role ID first (optional, but safer to join) or join directly
         # users_id is in role_attribution

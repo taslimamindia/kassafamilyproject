@@ -112,6 +112,11 @@ export default function TransactionCard({
                             <small className="text-muted d-block mb-1">{t('transactions.home.thPayment', 'Mode')}</small>
                             <div className="fw-medium">
                                 {tx.payment_method_name || '-'}
+                                {(tx.payment_method_name && ['Orange money', 'Virement bancaire'].includes(tx.payment_method_name)) && tx.account_number ? (
+                                    <span className="ms-2 text-muted" style={{fontSize: '0.95em'}}>
+                                        {t('transactions.home.accountNumber', 'N° compte')}: {tx.account_number}
+                                    </span>
+                                ) : null}
                             </div>
                         </div>
                         <div className="col-12">

@@ -140,3 +140,15 @@ class MessageUserInfo(BaseModel):
     message_id: int
     receiver_id: int
     sender: UserMinimal
+
+class UserSchema(BaseModel):
+    id: int
+    firstname: str
+    lastname: str
+    role: Optional[str] = None
+    image_url: Optional[str] = None
+    birthday: Optional[str] = None
+    id_father: Optional[int] = None
+    id_mother: Optional[int] = None
+    father_name: Optional[str] = None
+    mother_name: Optional[str] = None

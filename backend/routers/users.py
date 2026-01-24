@@ -1,13 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Request
-from typing import List, Optional
-from pydantic import BaseModel
+from typing import List
 import logging
 import re
 from datetime import datetime
 import asyncio
 
 from dependencies import get_cursor, get_current_user, has_role
-from models import UserCreate, UserAdminUpdate, UserUpdate, UserBulkTierUpdate
+from models import UserCreate, UserAdminUpdate, UserUpdate, UserBulkTierUpdate, UserSchema
 from utils import (
     parse_create_request,
     parse_update_request,
@@ -378,11 +377,7 @@ async def create_user(
     await cursor.execute(sql, tuple(values))
     try:
         await cursor.commit()
-        # Refresh users graph after DB change
-        try:
-            await update_users_graph(request.app, cursor)
-        except Exception:
-            logger.exception("[users] Failed to refresh users graph after create")
+        
     except Exception as e:
         logger.exception("[users] Commit failed during create_user")
         raise HTTPException(
@@ -522,7 +517,7 @@ async def create_user(
             admin_ids,
             msg,
             sender_id=current_user["id"],
-            link=f"/users/{new_id}",
+            link=f"/users",
         )
     except Exception as e:
         logger.warning(f"[users] Failed to notify admins about new user: {e}")
@@ -927,19 +922,6 @@ async def get_current_user_profile(
     u.pop("password", None)
     u["roles"] = roles
     return u
-
-
-class UserSchema(BaseModel):
-    id: int
-    firstname: str
-    lastname: str
-    role: Optional[str] = None
-    image_url: Optional[str] = None
-    birthday: Optional[str] = None
-    id_father: Optional[int] = None
-    id_mother: Optional[int] = None
-    father_name: Optional[str] = None
-    mother_name: Optional[str] = None
 
 
 @router.get("/tree", response_model=List[UserSchema])

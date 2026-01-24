@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { toast } from 'react-toastify'
 import { listTables, getDeletionOrder, listRows, deleteRows, type TableInfo, type DeletionOrderItem } from '../../../services/adminDb'
 
 export default function DbInspector() {
@@ -68,7 +69,7 @@ export default function DbInspector() {
             await refreshAll()
         } catch (e: any) {
             const detail = e?.body?.detail || e?.message || 'Suppression échouée'
-            alert(typeof detail === 'string' ? detail : JSON.stringify(detail))
+            toast.error(typeof detail === 'string' ? detail : JSON.stringify(detail))
         } finally {
             setLoading(false)
         }

@@ -537,23 +537,18 @@ async def send_notification(
         )
         msg_id = cursor.lastrowid
 
-        # 2. Get next ID for messages_recipients
-        await cursor.execute("SELECT MAX(id) as max_id FROM messages_recipients")
-        row = await cursor.fetchone()
-        next_rec_id = int(row["max_id"] if row and row.get("max_id") else 0) + 1
-
         # 3. Insert recipients
         values = []
         for rid in targets:
             sid = sender_id if sender_id else 1 
-            values.append((next_rec_id, 0, sid, rid, msg_id))
+            values.append((0, sid, rid, msg_id))
             next_rec_id += 1
 
         if values:
             await cursor.executemany(
                 """
-                INSERT INTO messages_recipients (id, isreaded, sender_id, receiver_id, messages_id)
-                VALUES (%s, %s, %s, %s, %s)
+                INSERT INTO messages_recipients (isreaded, sender_id, receiver_id, messages_id)
+                VALUES (%s, %s, %s, %s)
                 """,
                 values,
             )

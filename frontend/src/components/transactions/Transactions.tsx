@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { toast } from 'react-toastify'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import './Transactions.css'
 import { listTransactions, type Transaction, listPaymentMethods, type PaymentMethod, deleteTransaction, submitTransaction } from '../../services/transactions'
@@ -191,7 +192,7 @@ export default function Transactions() {
                         } else {
                             canDelete = tx.status === 'SAVED';
                         }
-                        
+
                         const canSubmit = canEdit && tx.status === 'SAVED'
 
                         return (
@@ -205,20 +206,20 @@ export default function Transactions() {
                                     onEdit={() => setShowEditId(tx.id)}
                                     onSubmit={async () => {
                                         try {
-                                             await submitTransaction(tx.id)
-                                             const txs = await listTransactions({
-                                                 status: status || undefined,
-                                                 payment_methods_id: typeof paymentMethodId === 'number' ? paymentMethodId : undefined,
-                                                 transaction_type: transactionType || undefined,
-                                                 date_from: dateFrom || undefined,
-                                                 date_to: dateTo || undefined,
-                                             })
-                                             setItems(txs)
-                                         } catch (e) {
-                                             console.error('Submit failed', e)
-                                             alert('Echec de l\'envoi')
-                                         }
-                                     }}
+                                            await submitTransaction(tx.id)
+                                            const txs = await listTransactions({
+                                                status: status || undefined,
+                                                payment_methods_id: typeof paymentMethodId === 'number' ? paymentMethodId : undefined,
+                                                transaction_type: transactionType || undefined,
+                                                date_from: dateFrom || undefined,
+                                                date_to: dateTo || undefined,
+                                            })
+                                            setItems(txs)
+                                        } catch (e) {
+                                            console.error('Submit failed', e)
+                                            toast.error('Echec de l\'envoi')
+                                        }
+                                    }}
                                     onDelete={async () => {
                                         const ok = window.confirm(t('transactions.home.confirmDelete') || 'Confirmer la suppression ?')
                                         if (!ok) return
@@ -232,9 +233,9 @@ export default function Transactions() {
                                                 date_to: dateTo || undefined,
                                             })
                                             setItems(txs)
-                                        } catch (e) { 
+                                        } catch (e) {
                                             console.error('Delete failed', e)
-                                            alert(t('transactions.home.deleteFailed') || 'Suppression échouée')
+                                            toast.error(t('transactions.home.deleteFailed') || 'Suppression échouée')
                                         }
                                     }}
                                 />

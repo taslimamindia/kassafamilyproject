@@ -10,6 +10,12 @@ export default function PaymentMethodsTab() {
     const [loading, setLoading] = useState<boolean>(false)
     const [listLoading, setListLoading] = useState<boolean>(false)
     const [methods, setMethods] = useState<PaymentMethod[]>([])
+    const [accountNumber, setAccountNumber] = useState<string>('')
+    // Pour l'édition
+    const [editId, setEditId] = useState<number | null>(null)
+    const [editName, setEditName] = useState<string>('')
+    const [editAccount, setEditAccount] = useState<string>('')
+    const [editLoading, setEditLoading] = useState<boolean>(false)
 
     async function loadMethods() {
         setListLoading(true)
@@ -33,10 +39,11 @@ export default function PaymentMethodsTab() {
         }
         setLoading(true)
         try {
-            await createPaymentMethod({ name, isactive: isactive ? 1 : 0, type_of_proof: 'BOTH' })
+            await createPaymentMethod({ name, isactive: isactive ? 1 : 0, type_of_proof: 'BOTH', account_number: accountNumber })
             toast.success(t('admin.transactions.pm.created', 'Payment method created'))
             setName('')
             setIsActive(true)
+            setAccountNumber('')
             await loadMethods()
         } catch (err: any) {
             const msg = err?.body?.detail || err?.message || t('admin.transactions.pm.createFailed', 'Failed to create payment method')
@@ -49,7 +56,7 @@ export default function PaymentMethodsTab() {
     async function toggleActive(pm: PaymentMethod) {
         const newVal = pm.isactive === 1 ? 0 : 1
         try {
-            await updatePaymentMethod(pm.id, { isactive: newVal })
+            await updatePaymentMethod(pm.id, { isactive: newVal, account_number: pm.account_number || '' })
             toast.success(t('admin.transactions.pm.updated', 'Updated'))
             await loadMethods()
         } catch (err: any) {
@@ -87,6 +94,10 @@ export default function PaymentMethodsTab() {
                                 <label className="form-label">{t('admin.transactions.pm.typeOfProof', 'Type of Proof')}</label>
                                 <input type="text" className="form-control" value={t('admin.transactions.pm.proofBoth', 'Both (number or link)')} disabled />
                             </div>
+                            <div className="col-md-3">
+                                <label className="form-label">{t('admin.transactions.pm.accountNumber', 'Account Number')}</label>
+                                <input type="text" className="form-control" value={accountNumber} onChange={e => setAccountNumber(e.target.value)} />
+                            </div>
                             <div className="col-md-3 d-flex align-items-end">
                                 <div className="form-check">
                                     <input className="form-check-input" type="checkbox" id="pm-active" checked={isactive} onChange={e => setIsActive(e.target.checked)} />
@@ -114,53 +125,122 @@ export default function PaymentMethodsTab() {
                             <tr>
                                 <th>{t('admin.transactions.pm.colName', 'Name')}</th>
                                 <th style={{ width: '180px' }}>{t('admin.transactions.pm.colTypeOfProof', 'Type of Proof')}</th>
+                                <th style={{ width: '180px' }}>{t('admin.transactions.pm.colAccountNumber', 'Account Number')}</th>
                                 <th style={{ width: '120px' }}>{t('admin.transactions.pm.colActive', 'Active')}</th>
                                 <th style={{ width: '200px' }}>{t('admin.transactions.pm.colUpdated', 'Updated')}</th>
-                                <th style={{ width: '140px' }}>{t('admin.transactions.pm.colActions', 'Actions')}</th>
+                                <th style={{ width: '180px' }}>{t('admin.transactions.pm.colActions', 'Actions')}</th>
                             </tr>
                         </thead>
                         <tbody>
                             {methods.length === 0 ? (
                                 <tr>
-                                    <td colSpan={4} className="text-center text-muted py-3">
+                                    <td colSpan={6} className="text-center text-muted py-3">
                                         {listLoading ? t('admin.transactions.pm.loading', 'Loading...') : t('admin.transactions.pm.empty', 'No payment methods')}
                                     </td>
                                 </tr>
                             ) : methods.map(pm => (
                                 <tr key={pm.id}>
-                                    <td>{pm.name}</td>
-                                    <td>
-                                        <select
-                                            className="form-select form-select-sm"
-                                            value={(pm.type_of_proof as any) || 'BOTH'}
-                                            onChange={async e => {
-                                                try {
-                                                    await updatePaymentMethod(pm.id, { type_of_proof: e.target.value as any })
-                                                    toast.success(t('admin.transactions.pm.updated', 'Updated'))
-                                                    await loadMethods()
-                                                } catch (err: any) {
-                                                    const msg = err?.body?.detail || err?.message || t('admin.transactions.pm.updateFailed', 'Failed to update')
-                                                    toast.error(msg)
-                                                }
-                                            }}>
-                                            <option value="TRANSACTIONNUMBER">{t('admin.transactions.pm.proofTransactionNumber', 'Transaction Number')}</option>
-                                            <option value="LINK">{t('admin.transactions.pm.proofLink', 'Link (image)')}</option>
-                                            <option value="BOTH">{t('admin.transactions.pm.proofBoth', 'Both (number or link)')}</option>
-                                        </select>
-                                    </td>
-                                    <td>
-                                        {pm.isactive === 1 ? (
-                                            <span className="badge bg-success">{t('admin.transactions.pm.active', 'Active')}</span>
-                                        ) : (
-                                            <span className="badge bg-secondary">{t('admin.transactions.pm.inactive', 'Inactive')}</span>
-                                        )}
-                                    </td>
-                                    <td>{pm.updated_at ? new Date(pm.updated_at).toLocaleString() : ''}</td>
-                                    <td>
-                                        <button className="btn btn-sm btn-outline-primary" onClick={() => toggleActive(pm)} disabled={listLoading}>
-                                            {pm.isactive === 1 ? t('admin.transactions.pm.deactivate', 'Deactivate') : t('admin.transactions.pm.activate', 'Activate')}
-                                        </button>
-                                    </td>
+                                    {/* Affichage ou édition inline */}
+                                    {editId === pm.id ? (
+                                        <>
+                                            <td>
+                                                <input type="text" className="form-control form-control-sm" value={editName} onChange={e => setEditName(e.target.value)} />
+                                            </td>
+                                            <td>
+                                                <select
+                                                    className="form-select form-select-sm"
+                                                    value={(pm.type_of_proof as any) || 'BOTH'}
+                                                    onChange={async e => {
+                                                        try {
+                                                            await updatePaymentMethod(pm.id, { type_of_proof: e.target.value as any, account_number: editId === pm.id ? editAccount : pm.account_number || '' })
+                                                            toast.success(t('admin.transactions.pm.updated', 'Updated'))
+                                                            await loadMethods()
+                                                        } catch (err: any) {
+                                                            const msg = err?.body?.detail || err?.message || t('admin.transactions.pm.updateFailed', 'Failed to update')
+                                                            toast.error(msg)
+                                                        }
+                                                    }}>
+                                                    <option value="TRANSACTIONNUMBER">{t('admin.transactions.pm.proofTransactionNumber', 'Transaction Number')}</option>
+                                                    <option value="LINK">{t('admin.transactions.pm.proofLink', 'Link (image)')}</option>
+                                                    <option value="BOTH">{t('admin.transactions.pm.proofBoth', 'Both (number or link)')}</option>
+                                                </select>
+                                            </td>
+                                            <td>
+                                                <input type="text" className="form-control form-control-sm" value={editAccount} onChange={e => setEditAccount(e.target.value)} />
+                                            </td>
+                                            <td>
+                                                {pm.isactive === 1 ? (
+                                                    <span className="badge bg-success">{t('admin.transactions.pm.active', 'Active')}</span>
+                                                ) : (
+                                                    <span className="badge bg-secondary">{t('admin.transactions.pm.inactive', 'Inactive')}</span>
+                                                )}
+                                            </td>
+                                            <td>{pm.updated_at ? new Date(pm.updated_at).toLocaleString() : ''}</td>
+                                            <td>
+                                                <button className="btn btn-sm btn-success me-1" disabled={editLoading} onClick={async () => {
+                                                    setEditLoading(true)
+                                                    try {
+                                                        await updatePaymentMethod(pm.id, { name: editName, account_number: editAccount })
+                                                        toast.success(t('admin.transactions.pm.updated', 'Updated'))
+                                                        setEditId(null)
+                                                        await loadMethods()
+                                                    } catch (err: any) {
+                                                        const msg = err?.body?.detail || err?.message || t('admin.transactions.pm.updateFailed', 'Failed to update')
+                                                        toast.error(msg)
+                                                    } finally {
+                                                        setEditLoading(false)
+                                                    }
+                                                }}>
+                                                    {t('admin.transactions.pm.save', 'Save')}
+                                                </button>
+                                                <button className="btn btn-sm btn-secondary" onClick={() => setEditId(null)}>{t('admin.transactions.pm.cancel', 'Cancel')}</button>
+                                            </td>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <td>{pm.name}</td>
+                                            <td>
+                                                <select
+                                                    className="form-select form-select-sm"
+                                                    value={(pm.type_of_proof as any) || 'BOTH'}
+                                                    onChange={async e => {
+                                                        try {
+                                                            await updatePaymentMethod(pm.id, { type_of_proof: e.target.value as any, account_number: pm.account_number || '' })
+                                                            toast.success(t('admin.transactions.pm.updated', 'Updated'))
+                                                            await loadMethods()
+                                                        } catch (err: any) {
+                                                            const msg = err?.body?.detail || err?.message || t('admin.transactions.pm.updateFailed', 'Failed to update')
+                                                            toast.error(msg)
+                                                        }
+                                                    }}>
+                                                    <option value="TRANSACTIONNUMBER">{t('admin.transactions.pm.proofTransactionNumber', 'Transaction Number')}</option>
+                                                    <option value="LINK">{t('admin.transactions.pm.proofLink', 'Link (image)')}</option>
+                                                    <option value="BOTH">{t('admin.transactions.pm.proofBoth', 'Both (number or link)')}</option>
+                                                </select>
+                                            </td>
+                                            <td>{pm.account_number || ''}</td>
+                                            <td>
+                                                {pm.isactive === 1 ? (
+                                                    <span className="badge bg-success">{t('admin.transactions.pm.active', 'Active')}</span>
+                                                ) : (
+                                                    <span className="badge bg-secondary">{t('admin.transactions.pm.inactive', 'Inactive')}</span>
+                                                )}
+                                            </td>
+                                            <td>{pm.updated_at ? new Date(pm.updated_at).toLocaleString() : ''}</td>
+                                            <td>
+                                                <button className="btn btn-sm btn-outline-primary me-1" onClick={() => {
+                                                    setEditId(pm.id)
+                                                    setEditName(pm.name)
+                                                    setEditAccount(pm.account_number || '')
+                                                }}>
+                                                    {t('admin.transactions.pm.edit', 'Edit')}
+                                                </button>
+                                                <button className="btn btn-sm btn-outline-primary" onClick={() => toggleActive(pm)} disabled={listLoading}>
+                                                    {pm.isactive === 1 ? t('admin.transactions.pm.deactivate', 'Deactivate') : t('admin.transactions.pm.activate', 'Activate')}
+                                                </button>
+                                            </td>
+                                        </>
+                                    )}
                                 </tr>
                             ))}
                         </tbody>

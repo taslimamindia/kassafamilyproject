@@ -7,6 +7,7 @@ export type PaymentMethod = {
     isactive: number
     created_at: string
     updated_at: string
+    account_number: string
 }
 
 export type TransactionApproval = {
@@ -46,6 +47,7 @@ export type Transaction = {
     payment_method_name?: string
     payment_method_type_of_proof?: 'TRANSACTIONNUMBER' | 'LINK' | 'BOTH'
     approvals?: TransactionApproval[]
+    account_number?: string
 }
 
 export async function listPaymentMethods(opts: { active?: boolean } = {}): Promise<PaymentMethod[]> {
@@ -55,7 +57,7 @@ export async function listPaymentMethods(opts: { active?: boolean } = {}): Promi
     return getJson<PaymentMethod[]>(`/payment-methods${q ? `?${q}` : ''}`)
 }
 
-export async function createPaymentMethod(pm: { name: string; isactive?: number; type_of_proof?: 'TRANSACTIONNUMBER' | 'LINK' | 'BOTH' }): Promise<PaymentMethod> {
+export async function createPaymentMethod(pm: { name: string; isactive?: number; type_of_proof?: 'TRANSACTIONNUMBER' | 'LINK' | 'BOTH', account_number: string }): Promise<PaymentMethod> {
     const res = await apiFetch('/payment-methods', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -65,7 +67,7 @@ export async function createPaymentMethod(pm: { name: string; isactive?: number;
     return (await res.json()) as PaymentMethod
 }
 
-export async function updatePaymentMethod(id: number, partial: { name?: string; isactive?: number; type_of_proof?: 'TRANSACTIONNUMBER' | 'LINK' | 'BOTH' }): Promise<PaymentMethod> {
+export async function updatePaymentMethod(id: number, partial: { name?: string; isactive?: number; type_of_proof?: 'TRANSACTIONNUMBER' | 'LINK' | 'BOTH', account_number: string }): Promise<PaymentMethod> {
     const res = await apiFetch(`/payment-methods/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
