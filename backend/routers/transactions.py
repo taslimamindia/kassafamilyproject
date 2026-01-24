@@ -42,6 +42,7 @@ class PaymentMethodCreate(BaseModel):
     name: str
     isactive: Optional[int] = 1
     type_of_proof: Optional[str] = "BOTH"
+    account_number: Optional[str] = None
 
     @field_validator("name")
     @classmethod
@@ -64,6 +65,7 @@ class PaymentMethodUpdate(BaseModel):
     name: Optional[str] = None
     isactive: Optional[int] = None
     type_of_proof: Optional[str] = None
+    account_number: Optional[str] = None
 
     @field_validator("name")
     @classmethod
@@ -309,7 +311,7 @@ async def list_payment_methods(
     vals.extend(ALLOWED_PAYMENT_METHODS)
     clause = ("WHERE " + " AND ".join(where)) if where else ""
     await cursor.execute(
-        f"SELECT id, name, type_of_proof, isactive, created_at, updated_at FROM payment_methods {clause} ORDER BY name",
+        f"SELECT id, name, type_of_proof, isactive, created_at, updated_at, account_number FROM payment_methods {clause} ORDER BY name",
         tuple(vals),
     )
     return await cursor.fetchall()
@@ -336,8 +338,8 @@ async def create_payment_method(
     now = datetime.now()
     await cursor.execute(
         """
-		INSERT INTO payment_methods (name, type_of_proof, isactive, created_at, updated_at)
-		VALUES (%s, %s, %s, %s, %s)
+		INSERT INTO payment_methods (name, type_of_proof, isactive, created_at, updated_at, account_number)
+		VALUES (%s, %s, %s, %s, %s, %s)
 		""",
         (
             body.name,
@@ -345,6 +347,7 @@ async def create_payment_method(
             body.isactive if body.isactive is not None else 1,
             now,
             now,
+            body.account_number,
         ),
     )
     try:
@@ -394,6 +397,9 @@ async def update_payment_method(
     if body.type_of_proof is not None:
         fields.append("type_of_proof = %s")
         vals.append(body.type_of_proof)
+    if body.account_number is not None:
+        fields.append("account_number = %s")
+        vals.append(body.account_number)
     fields.append("updated_at = %s")
     vals.append(datetime.now())
 
@@ -473,17 +479,17 @@ async def list_transactions(
 
     clause = ("WHERE " + " AND ".join(where)) if where else ""
     sql = f"""
-		SELECT t.*, 
+        SELECT t.*, 
             u.username AS user_username, u.firstname AS user_firstname, u.lastname AS user_lastname, u.image_url AS user_image_url,
             rb.username AS recorded_by_username, rb.firstname AS recorded_by_firstname, rb.lastname AS recorded_by_lastname,
-			pm.name AS payment_method_name, pm.type_of_proof AS payment_method_type_of_proof
-		FROM transactions t
-		JOIN users u ON u.id = t.users_id
-		JOIN users rb ON rb.id = t.recorded_by_id
-		JOIN payment_methods pm ON pm.id = t.payment_methods_id
-		{clause}
-		ORDER BY t.created_at DESC
-	"""
+            pm.name AS payment_method_name, pm.type_of_proof AS payment_method_type_of_proof, pm.account_number AS payment_method_account_number
+        FROM transactions t
+        JOIN users u ON u.id = t.users_id
+        JOIN users rb ON rb.id = t.recorded_by_id
+        JOIN payment_methods pm ON pm.id = t.payment_methods_id
+        {clause}
+        ORDER BY t.created_at DESC
+    """
     await cursor.execute(sql, tuple(vals))
     transactions = await cursor.fetchall()
 
@@ -514,6 +520,12 @@ async def list_transactions(
 
         for tx in transactions:
             tx["approvals"] = approval_map.get(tx["id"], [])
+            # Add account_number for Orange money or Virement bancaire
+            pm_name = tx.get("payment_method_name", "").lower()
+            if pm_name in ["orange money", "virement bancaire"]:
+                tx["account_number"] = tx.get("payment_method_account_number")
+            else:
+                tx["account_number"] = None
 
     return transactions
 

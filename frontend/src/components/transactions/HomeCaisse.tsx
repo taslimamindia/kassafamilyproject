@@ -579,43 +579,48 @@ export default function HomeCaisse() {
                                 </tr>
                             </thead>
                             <tbody>
-                                {lastTx.map(t => (
-                                    <tr key={t.id} className="transaction-hover">
+                                {lastTx.map(tx => (
+                                    <tr key={tx.id} className="transaction-hover">
                                         <td className="ps-4">
                                             <div className="d-flex align-items-center py-1">
                                                 <div className="d-flex align-items-center justify-content-center rounded-circle bg-light me-3" style={{ width: 40, height: 40 }}>
-                                                    {t.transaction_type === 'EXPENSE' ? '💸' : '💰'}
+                                                    {tx.transaction_type === 'EXPENSE' ? '💸' : '💰'}
                                                 </div>
                                                 <div>
-                                                    <div className="fw-bold text-dark" style={{ fontSize: '0.95rem' }}>{t.user_firstname} {t.user_lastname}</div>
-                                                    <div className="small text-muted text-uppercase" style={{ fontSize: '0.7rem', letterSpacing: '0.05em' }}>{t.transaction_type}</div>
+                                                    <div className="fw-bold text-dark" style={{ fontSize: '0.95rem' }}>{tx.user_firstname} {tx.user_lastname}</div>
+                                                    <div className="small text-muted text-uppercase" style={{ fontSize: '0.7rem', letterSpacing: '0.05em' }}>{tx.transaction_type}</div>
                                                 </div>
                                             </div>
                                         </td>
                                         <td>
-                                            <span className={`fw-bold ${t.transaction_type === 'EXPENSE' ? 'text-danger' : 'text-success'}`}>
-                                                {t.transaction_type === 'EXPENSE' ? '-' : '+'}{Number(t.amount).toLocaleString('fr-FR')}
+                                            <span className={`fw-bold ${tx.transaction_type === 'EXPENSE' ? 'text-danger' : 'text-success'}`}>
+                                                {tx.transaction_type === 'EXPENSE' ? '-' : '+'}{Number(tx.amount).toLocaleString('fr-FR')}
                                             </span>
                                         </td>
                                         <td>
-                                            <span className={`badge rounded-pill fw-normal text-uppercase px-3 py-2 ${t.status === 'VALIDATED' ? 'bg-success-subtle text-success' :
-                                                t.status === 'PENDING' ? 'bg-warning-subtle text-warning' : 'bg-secondary-subtle text-secondary'
+                                            <span className={`badge rounded-pill fw-normal text-uppercase px-3 py-2 ${tx.status === 'VALIDATED' ? 'bg-success-subtle text-success' :
+                                                tx.status === 'PENDING' ? 'bg-warning-subtle text-warning' : 'bg-secondary-subtle text-secondary'
                                                 }`} style={{ fontSize: '0.7rem' }}>
-                                                {t.status}
+                                                {tx.status}
                                             </span>
                                         </td>
                                         <td>
                                             <div className="avatar-stack">
-                                                {(t.approvals || []).map((app, i) => (
+                                                {(tx.approvals || []).map((app, i) => (
                                                     <div key={i} className="avatar-circle" title={app.approved_by_username}>
                                                         {(app.approved_by_username || '?').substring(0, 2).toUpperCase()}
                                                     </div>
                                                 ))}
-                                                {(!t.approvals || t.approvals.length === 0) && <span className="text-muted small">-</span>}
+                                                {(!tx.approvals || tx.approvals.length === 0) && <span className="text-muted small">-</span>}
                                             </div>
                                         </td>
                                         <td className="text-end pe-4 text-muted small">
-                                            {new Date(t.created_at).toLocaleDateString()}
+                                            {new Date(tx.created_at).toLocaleDateString()}
+                                            {(tx.payment_method_name && ['Orange money', 'Virement bancaire'].includes(tx.payment_method_name)) && tx.account_number ? (
+                                                <span className="ms-2 text-muted" style={{fontSize: '0.95em'}}>
+                                                    {t('transactions.home.accountNumber', 'N° compte')}: {tx.account_number}
+                                                </span>
+                                            ) : null}
                                         </td>
                                     </tr>
                                 ))}

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { toast } from 'react-toastify'
 import { useTranslation } from 'react-i18next'
 import { sendMessage, type MessageCreate } from '../../services/messages'
 import { getReceivers, type User } from '../../services/users'
@@ -33,14 +34,14 @@ export default function Chat({ onClose }: ChatProps) {
 
         const wordCount = message.trim().split(/\s+/).length
         if (wordCount > 150) {
-            alert(t('notifications.chat.tooLong', `Le message est trop long (${wordCount} mots). La limite est de 150 mots.`))
+            toast.error(t('notifications.chat.tooLong', `Le message est trop long (${wordCount} mots). La limite est de 150 mots.`))
             return
         }
 
         // Simple heuristic to detect code-like content
         const codePatterns = /<[^>]+>|function\s*\(|=>\s*\{|const\s+\w+\s*=|let\s+\w+\s*=|var\s+\w+\s*=|class\s+\w+\s*\{|import\s+.*from/i
         if (codePatterns.test(message)) {
-            alert(t('notifications.chat.codeNotAllowed', "Le message semble contenir du code ou du HTML, ce qui n'est pas autorisé. Veuillez envoyer uniquement du texte brut."))
+            toast.error(t('notifications.chat.codeNotAllowed', "Le message semble contenir du code ou du HTML, ce qui n'est pas autorisé. Veuillez envoyer uniquement du texte brut."))
             return
         }
 
@@ -52,9 +53,13 @@ export default function Chat({ onClose }: ChatProps) {
                 recipient_id: recipientType === 'member' ? selectedMembers.map(s => parseInt(s)) : undefined
             })
             onClose()
-        } catch (error) {
+        } catch (error: any) {
             console.error(error)
-            alert(t('notifications.chat.sendError', "Erreur lors de l'envoi du message"))
+            if (error?.body?.detail) {
+                toast.error(error.body.detail)
+            } else {
+                toast.error(t('notifications.chat.sendError', "Erreur lors de l'envoi du message"))
+            }
         } finally {
             setSending(false)
         }

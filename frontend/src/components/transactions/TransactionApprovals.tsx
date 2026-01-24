@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { toast } from 'react-toastify'
 import { useTranslation } from 'react-i18next'
 import { listTransactions, approveTransaction, rejectTransaction, type Transaction } from '../../services/transactions'
 import { getCurrentUser, type User } from '../../services/users'
@@ -19,7 +20,7 @@ export default function TransactionApprovals() {
     const [approving, setApproving] = useState(false)
     const [showConfirmBatch, setShowConfirmBatch] = useState(false)
     const [viewProofUrl, setViewProofUrl] = useState<string | null>(null)
-    
+
     // Rejection state
     const [rejectModalOpen, setRejectModalOpen] = useState(false)
     const [rejectTxId, setRejectTxId] = useState<number | null>(null)
@@ -100,14 +101,14 @@ export default function TransactionApprovals() {
     const confirmReject = async () => {
         if (!rejectTxId) return
         if (!rejectReason.trim()) {
-            alert("Veuillez indiquer le motif du rejet")
+            toast.error("Veuillez indiquer le motif du rejet")
             return
         }
-        
+
         // Word count check
         const words = rejectReason.trim().split(/\s+/)
         if (words.length > 100) {
-            alert(`Le motif est trop long (${words.length} mots). Maximum 100 mots.`)
+            toast.error(`Le motif est trop long (${words.length} mots). Maximum 100 mots.`)
             return
         }
 
@@ -123,7 +124,7 @@ export default function TransactionApprovals() {
             setRejectModalOpen(false)
         } catch (e) {
             console.error("Rejection failed", e)
-            alert("Une erreur est survenue lors du rejet")
+            toast.error("Une erreur est survenue lors du rejet")
         } finally {
             setApproving(false)
         }
@@ -179,7 +180,7 @@ export default function TransactionApprovals() {
 
         } catch (e) {
             console.error("Approval failed", e)
-            alert("Une erreur est survenue lors de la validation")
+            toast.error("Une erreur est survenue lors de la validation")
         } finally {
             setApproving(false)
         }
@@ -264,13 +265,13 @@ export default function TransactionApprovals() {
                                             {tx.proof_reference && (
                                                 <div className="mt-2">
                                                     {(() => {
-                                                        const isLink = (tx.payment_method_type_of_proof === 'LINK') || 
+                                                        const isLink = (tx.payment_method_type_of_proof === 'LINK') ||
                                                             (tx.payment_method_type_of_proof === 'BOTH' && (tx.proof_reference.startsWith('http') || tx.proof_reference.includes('/'))) ||
                                                             (!tx.payment_method_type_of_proof && (tx.proof_reference.startsWith('http') || tx.proof_reference.includes('/')));
-                                                        
+
                                                         if (isLink) {
                                                             return (
-                                                                <button 
+                                                                <button
                                                                     className="btn btn-sm btn-light border d-flex align-items-center gap-2 p-1 pe-3 rounded-pill"
                                                                     onClick={(e) => { e.stopPropagation(); setViewProofUrl(tx.proof_reference) }}
                                                                 >
@@ -397,21 +398,31 @@ export default function TransactionApprovals() {
                                             </span>
                                         </td>
                                         <td className="small">{tx.payment_method_name}</td>
+                                        {(tx.payment_method_name && ['Orange money', 'Virement bancaire'].includes(tx.payment_method_name)) && tx.account_number ? (
+                                            <td className="small">
+                                                {tx.payment_method_name}
+                                                <span className="ms-2 text-muted" style={{ fontSize: '0.95em' }}>
+                                                    {t('transactions.home.accountNumber', 'N° compte')}: {tx.account_number}
+                                                </span>
+                                            </td>
+                                        ) : (
+                                            <td className="small">{tx.payment_method_name}</td>
+                                        )}
                                         <td>
                                             {(() => {
                                                 if (!tx.proof_reference) return <span className="text-muted small">-</span>
-                                                const isLink = (tx.payment_method_type_of_proof === 'LINK') || 
+                                                const isLink = (tx.payment_method_type_of_proof === 'LINK') ||
                                                     (tx.payment_method_type_of_proof === 'BOTH' && (tx.proof_reference.startsWith('http') || tx.proof_reference.includes('/'))) ||
                                                     (!tx.payment_method_type_of_proof && (tx.proof_reference.startsWith('http') || tx.proof_reference.includes('/')));
-                                                
+
                                                 if (isLink) {
                                                     return (
                                                         <div className="d-flex align-items-center gap-2">
-                                                            <img 
-                                                                src={tx.proof_reference} 
-                                                                alt="" 
-                                                                className="rounded border" 
-                                                                style={{ width: '36px', height: '36px', objectFit: 'cover', cursor: 'pointer' }} 
+                                                            <img
+                                                                src={tx.proof_reference}
+                                                                alt=""
+                                                                className="rounded border"
+                                                                style={{ width: '36px', height: '36px', objectFit: 'cover', cursor: 'pointer' }}
                                                                 onClick={() => setViewProofUrl(tx.proof_reference)}
                                                             />
                                                             <button className="btn btn-sm btn-light border py-0 px-1" onClick={() => setViewProofUrl(tx.proof_reference)} title="Voir la preuve">
@@ -420,7 +431,7 @@ export default function TransactionApprovals() {
                                                         </div>
                                                     )
                                                 }
-                                                return <span className="small font-monospace bg-white border px-2 py-1 rounded text-nowrap" style={{maxWidth: '120px', display: 'inline-block', overflow: 'hidden', textOverflow: 'ellipsis'}} title={tx.proof_reference}>{tx.proof_reference}</span>
+                                                return <span className="small font-monospace bg-white border px-2 py-1 rounded text-nowrap" style={{ maxWidth: '120px', display: 'inline-block', overflow: 'hidden', textOverflow: 'ellipsis' }} title={tx.proof_reference}>{tx.proof_reference}</span>
                                             })()}
                                         </td>
                                         <td>
@@ -499,9 +510,9 @@ export default function TransactionApprovals() {
                     <p className="text-muted small mb-3">
                         Veuillez indiquer le motif du rejet. Ce motif sera enregistré et visible. (Max 100 mots)
                     </p>
-                    <textarea 
-                        className="form-control mb-2" 
-                        rows={4} 
+                    <textarea
+                        className="form-control mb-2"
+                        rows={4}
                         value={rejectReason}
                         onChange={(e) => setRejectReason(e.target.value)}
                         placeholder="Motif du rejet..."
@@ -511,8 +522,8 @@ export default function TransactionApprovals() {
                     </div>
                     <div className="d-flex justify-content-end gap-2">
                         <button className="btn btn-light" onClick={() => setRejectModalOpen(false)}>Annuler</button>
-                        <button 
-                            className="btn btn-danger" 
+                        <button
+                            className="btn btn-danger"
                             onClick={confirmReject}
                             disabled={approving || !rejectReason.trim()}
                         >

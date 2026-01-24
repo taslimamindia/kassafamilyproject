@@ -83,6 +83,10 @@ class Settings:
         # Optional: base folder prefix inside the bucket (e.g., "kassa-dev")
         self.aws_s3_base_folder = os.getenv("BACKEND_AWS_S3_BASE_FOLDER")
         self.aws_base_folder = os.getenv("BACKEND_AWS_BASE_FOLDER")
+        
+        # Fireworks AI
+        self.fireworks_api_key = os.getenv("FIREWORKS_API_KEY")
+        self.fireworks_model_name = os.getenv("MODEL_NAME")
 
         # Resolve SSH key path early so downstream code consistently gets an absolute path
         if self.db_via_ssh:

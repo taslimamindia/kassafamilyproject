@@ -108,6 +108,7 @@ CREATE TABLE IF NOT EXISTS `database_kassa`.`payment_methods` (
   `created_at` DATETIME NOT NULL,
   `updated_at` DATETIME NOT NULL,
   `type_of_proof` ENUM('TRANSACTIONNUMBER', 'LINK', 'BOTH') NOT NULL DEFAULT 'BOTH',
+  `account_number` VARCHAR(45) NOT NULL,
   PRIMARY KEY (`id`),
   UNIQUE INDEX `updated_at_UNIQUE` (`updated_at` ASC) VISIBLE,
   UNIQUE INDEX `created_at_UNIQUE` (`created_at` ASC) VISIBLE,
