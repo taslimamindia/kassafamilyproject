@@ -631,6 +631,9 @@ async def create_transaction(
         params,
     )
 
+    # Get the new transaction id immediately after insert
+    new_id = cursor.lastrowid
+
     if (body.issubmitted or 0) == 1:
         await notify_treasurers_new_transaction(cursor, current_user["id"])
 
@@ -657,20 +660,18 @@ async def create_transaction(
                 ),
             )
             # Update status to PARTIALLY_APPROVED
-            # (Assume < 2 total since it's just created, unless user is somehow double-role but creator is singular)
             await cursor.execute(
                 "UPDATE transactions SET status = 'PARTIALLY_APPROVED', updated_by = %s, updated_at = %s WHERE id = %s",
                 (current_user["id"], now, new_id),
             )
 
-    try:
-        await cursor.commit()
-    except Exception:
-        logger.exception("[transactions] Commit failed during create_transaction")
-        raise HTTPException(status_code=500, detail="Database commit failed")
-    new_id = cursor.lastrowid
-    await cursor.execute("SELECT * FROM transactions WHERE id = %s", (new_id,))
-    return await cursor.fetchone()
+        try:
+            await cursor.commit()
+        except Exception:
+            logger.exception("[transactions] Commit failed during create_transaction")
+            raise HTTPException(status_code=500, detail="Database commit failed")
+        await cursor.execute("SELECT * FROM transactions WHERE id = %s", (new_id,))
+        return await cursor.fetchone()
 
 
 @router.post("/transactions/proof-upload")

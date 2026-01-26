@@ -31,7 +31,8 @@ class Settings:
         self.db_pool_size = int(os.getenv("BACKEND_DB_POOL_SIZE", "15"))
 
         # Optional: route DB via SSH tunnel (e.g., Lightsail with PEM)
-        self.db_via_ssh = str(os.getenv("BACKEND_DB_VIA_SSH", "false")).strip().lower() in {"1", "true", "yes"}
+        self.db_via_ssh = str(os.getenv("BACKEND_DB_VIA_SSH", 'false')).strip().lower() in {"1", "true", "yes"}
+        print(self.db_via_ssh)
         
         if self.db_via_ssh:
             self.ssh_host = os.getenv("BACKEND_SSH_HOST")
