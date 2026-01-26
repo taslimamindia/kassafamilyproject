@@ -64,7 +64,9 @@ export default function DbInspector() {
         if (!window.confirm(msg)) return
         try {
             setLoading(true)
+            // Delete selected DB rows
             await deleteRows(selectedTable, Array.from(selectedIds))
+
             await openTable(selectedTable, page)
             await refreshAll()
         } catch (e: any) {

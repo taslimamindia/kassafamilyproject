@@ -3,6 +3,8 @@ from typing import List, Dict, Any, Optional, Tuple
 import logging
 
 from dependencies import get_cursor, get_current_user, has_role
+from settings import settings
+from aws_file import AwsFile
 
 router = APIRouter()
 logger = logging.getLogger("admin_db")
@@ -230,6 +232,27 @@ async def delete_rows_endpoint(
 
     # Prepare placeholders and values
     placeholders = ",".join(["%s"] * len(ids))
+
+    # Before deletion: collect URLs to delete from AWS for specific tables
+    urls_to_delete: list[str] = []
+    t_lower = table.lower()
+    if t_lower in {"users", "transactions"}:
+        await cursor.execute(
+            f"SELECT * FROM `{table}` WHERE `{pk}` IN ({placeholders})",
+            tuple(ids),
+        )
+        rows = await cursor.fetchall() or []
+        for r in rows:
+            if t_lower == "users":
+                url = r.get("image_url") or r.get("url_image")
+                if isinstance(url, str) and url.startswith(("http://", "https://")):
+                    urls_to_delete.append(url)
+            elif t_lower == "transactions":
+                ref = r.get("proof_reference")
+                if isinstance(ref, str) and ref.startswith(("http://", "https://")):
+                    urls_to_delete.append(ref)
+
+    # Delete rows
     sql = f"DELETE FROM `{table}` WHERE `{pk}` IN ({placeholders})"
 
     try:
@@ -247,5 +270,19 @@ async def delete_rows_endpoint(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Delete failed"
         )
+    # After successful DB deletion, best-effort delete AWS images
+    if urls_to_delete:
+        try:
+            aws = AwsFile(settings)
+            for url in urls_to_delete:
+                try:
+                    ok = aws.delete_image(url)
+                    if not ok:
+                        logger.warning(f"[admin_db] AWS delete failed for url={url}")
+                except Exception:
+                    logger.exception(f"[admin_db] Exception while deleting AWS image url={url}")
+        except Exception:
+            # Do not fail the endpoint if AWS setup has issues; just log
+            logger.exception("[admin_db] AWS client initialization failed; skipping image deletions")
 
     return {"deleted": cursor.rowcount}
