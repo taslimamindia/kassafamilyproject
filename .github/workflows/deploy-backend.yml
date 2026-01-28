@@ -46,7 +46,9 @@ jobs:
             BACKEND_AWS_SECRET_ACCESS_KEY,
             BACKEND_AWS_REGION,
             BACKEND_AWS_S3_BUCKET,
-            BACKEND_AWS_BASE_FOLDER
+            BACKEND_AWS_BASE_FOLDER,
+            FIREWORKS_API_KEY,
+            MODEL_NAME
           script: |
             # --- GESTION DES ERREURS ---
             set -e 
@@ -108,6 +110,9 @@ jobs:
             BACKEND_AWS_REGION=$BACKEND_AWS_REGION
             BACKEND_AWS_S3_BUCKET=$BACKEND_AWS_S3_BUCKET
             BACKEND_AWS_BASE_FOLDER=$BACKEND_AWS_BASE_FOLDER
+
+            FIREWORKS_API_KEY=$FIREWORKS_API_KEY
+            MODEL_NAME=$MODEL_NAME
             EOF
 
             # 5. Mise à jour des dépendances
@@ -147,5 +152,8 @@ jobs:
           BACKEND_AWS_ACCESS_KEY_ID: ${{ secrets.BACKEND_AWS_ACCESS_KEY_ID }}
           BACKEND_AWS_SECRET_ACCESS_KEY: ${{ secrets.BACKEND_AWS_SECRET_ACCESS_KEY }}
           BACKEND_AWS_REGION: ${{ secrets.BACKEND_AWS_REGION }}
+          FIREWORKS_API_KEY: ${{ secrets.FIREWORKS_API_KEY }}
+          MODEL_NAME: ${{ secrets.MODEL_NAME }}
+          
           BACKEND_AWS_S3_BUCKET: ${{ secrets.BACKEND_AWS_S3_BUCKET }}
           BACKEND_AWS_BASE_FOLDER: ${{ secrets.BACKEND_AWS_BASE_FOLDER }}
