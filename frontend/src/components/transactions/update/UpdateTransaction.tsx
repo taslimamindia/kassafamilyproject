@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { toast } from 'react-toastify'
+import i18n from '../../../i18n'
 import {
     getTransaction,
     updateTransaction,
@@ -15,6 +16,106 @@ import { useTranslation } from 'react-i18next'
 import { getCurrentUser, type User } from '../../../services/users'
 import { getRolesForUser } from '../../../services/roleAttributions'
 import { paymentMethodOptions, transactionKindOptions, mapKindToBackend, type TransactionKind } from '../../../constants/transactionOptions'
+
+const updateTransactionResources = {
+    fr: {
+        transactions: {
+            update: {
+                title: 'Modifier la transaction',
+                onlySavedRecorder: 'Seul l’initiateur peut modifier en statut « SAVED ». Le trésorier peut modifier ce qu’il a enregistré en « SAVED » ou « PENDING ».',
+                member: 'Membre',
+                loadingFailed: 'Transaction introuvable',
+                currentProof: 'Preuve actuelle',
+                cancel: 'Annuler',
+                save: 'Enregistrer',
+                submitted: 'Soumis au trésorier',
+                submitFailed: 'Échec de la soumission'
+            },
+            add: {
+                 amount: 'Montant',
+                 amountPlaceholder: 'Ex: 50 000',
+                 currency: 'Devise: Franc Guinéen (GNF)',
+                 type: 'Type',
+                 paymentMethod: 'Méthode de paiement',
+                 selectMethod: 'Sélectionner une méthode',
+                 proofType: 'Type de preuve',
+                 proofNumber: 'Numéro de transaction',
+                 proofLink: 'Lien/Justificatif',
+                 proofReference: 'Preuve (Référence ou Fichier)',
+                 noPreview: 'Aperçu indisponible',
+                 currentRef: 'Réf',
+                 noRef: 'Aucune référence',
+                 createAndSend: 'Enregistrer et Envoyer'
+            }
+        }
+    },
+    en: {
+        transactions: {
+            update: {
+                title: 'Update Transaction',
+                onlySavedRecorder: 'Only the initiator can edit in "SAVED" status. The treasurer can edit what they recorded in "SAVED" or "PENDING".',
+                member: 'Member',
+                loadingFailed: 'Transaction not found',
+                currentProof: 'Current Proof',
+                cancel: 'Cancel',
+                save: 'Save',
+                submitted: 'Submitted to treasurer',
+                submitFailed: 'Submission failed'
+            },
+            add: {
+                 amount: 'Amount',
+                 amountPlaceholder: 'Ex: 50,000',
+                 currency: 'Currency: Guinean Franc (GNF)',
+                 type: 'Type',
+                 paymentMethod: 'Payment method',
+                 selectMethod: 'Select a method',
+                 proofType: 'Proof type',
+                 proofNumber: 'Transaction Number',
+                 proofLink: 'Link/File',
+                 proofReference: 'Proof (Reference or File)',
+                 noPreview: 'No preview available',
+                 currentRef: 'Ref',
+                 noRef: 'No reference',
+                 createAndSend: 'Save and Send'
+            }
+        }
+    },
+    ar: {
+        transactions: {
+            update: {
+                title: 'تحديث المعاملة',
+                onlySavedRecorder: 'يمكن للمبادرة فقط التعديل في حالة "محفوظة". يمكن للخازن تعديل ما سجله في "محفوظة" أو "قيد الانتظار".',
+                member: 'العضو',
+                loadingFailed: 'المعاملة غير موجودة',
+                currentProof: 'الإثبات الحالي',
+                cancel: 'إلغاء',
+                save: 'حفظ',
+                submitted: 'تم الإرسال للخازن',
+                submitFailed: 'فشل الإرسال'
+            },
+            add: {
+                 amount: 'المبلغ',
+                 amountPlaceholder: 'مثال: 50,000',
+                 currency: 'العملة: فرنك غيني (GNF)',
+                 type: 'النوع',
+                 paymentMethod: 'طريقة الدفع',
+                 selectMethod: 'اختر طريقة',
+                 proofType: 'نوع الإثبات',
+                 proofNumber: 'رقم المعاملة',
+                 proofLink: 'رابط/ملف',
+                 proofReference: 'الإثبات (مرجع أو ملف)',
+                 noPreview: 'لا توجد معاينة',
+                 currentRef: 'مرجع',
+                 noRef: 'لا يوجد مرجع',
+                 createAndSend: 'حفظ وإرسال'
+            }
+        }
+    }
+}
+
+for (const [lng, res] of Object.entries(updateTransactionResources)) {
+    i18n.addResourceBundle(lng, 'translation', res as any, true, false)
+}
 
 export default function UpdateTransaction({ id: propId, onSuccess, onCancel }: { id?: number; onSuccess?: () => void; onCancel?: () => void }) {
     const { id } = useParams()

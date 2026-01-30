@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { toast } from 'react-toastify'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
+import i18n from '../../i18n'
 import './Transactions.css'
 import { listTransactions, type Transaction, listPaymentMethods, type PaymentMethod, deleteTransaction, submitTransaction } from '../../services/transactions'
 import { getCurrentUser, type User } from '../../services/users'
@@ -8,8 +10,86 @@ import Modal from '../common/Modal'
 import AddTransaction from './add/AddTransaction'
 import TransactionCard from './TransactionCard'
 import UpdateTransaction from './update/UpdateTransaction'
-import { useTranslation } from 'react-i18next'
 import { transactionStatusOptions, transactionTypeOptions } from '../../constants/transactionOptions'
+
+const transactionsResources = {
+    fr: {
+        transactions: {
+            home: {
+                title: 'Transactions',
+                new: 'Nouvelle transaction',
+                status: 'Statut',
+                all: 'Tous',
+                type: 'Type',
+                paymentMethod: 'Méthode',
+                from: 'Du',
+                to: 'Au',
+                resetFilters: 'Réinitialiser',
+                searchPlaceholder: 'Rechercher...',
+                loading: 'Chargement...',
+                empty: 'Aucune transaction trouvée',
+                confirmDelete: 'Confirmer la suppression ?',
+                deleteFailed: 'Suppression échouée',
+                addTitle: 'Ajouter une transaction',
+                updateTitle: 'Modifier la transaction',
+                caisse: 'Caisse',
+                submitFailed: "Echec de l'envoi"
+            }
+        }
+    },
+    en: {
+        transactions: {
+            home: {
+                title: 'Transactions',
+                new: 'New Transaction',
+                status: 'Status',
+                all: 'All',
+                type: 'Type',
+                paymentMethod: 'Method',
+                from: 'From',
+                to: 'To',
+                resetFilters: 'Reset',
+                searchPlaceholder: 'Search...',
+                loading: 'Loading...',
+                empty: 'No transactions found',
+                confirmDelete: 'Confirm delete?',
+                deleteFailed: 'Delete failed',
+                addTitle: 'Add Transaction',
+                updateTitle: 'Update Transaction',
+                caisse: 'Cash Register',
+                submitFailed: "Submission failed"
+            }
+        }
+    },
+    ar: {
+        transactions: {
+            home: {
+                title: 'المعاملات',
+                new: 'معاملة جديدة',
+                status: 'الحالة',
+                all: 'الكل',
+                type: 'النوع',
+                paymentMethod: 'الطريقة',
+                from: 'من',
+                to: 'إلى',
+                resetFilters: 'إعادة تعيين',
+                searchPlaceholder: 'بحث...',
+                loading: 'جار التحميل...',
+                empty: 'لم يتم العثور على معاملات',
+                confirmDelete: 'تأكيد الحذف؟',
+                deleteFailed: 'فشل الحذف',
+                addTitle: 'إضافة معاملة',
+                updateTitle: 'تحديث المعاملة',
+                caisse: 'الصندوق',
+                submitFailed: "فشل الإرسال"
+            }
+        }
+    }
+}
+
+for (const [lng, res] of Object.entries(transactionsResources)) {
+    i18n.addResourceBundle(lng, 'translation', res as any, true, false)
+}
 
 type TxStatus = 'SAVED' | 'PENDING' | 'PARTIALLY_APPROVED' | 'VALIDATED' | 'REJECTED'
 type TxType = 'CONTRIBUTION' | 'DONATIONS' | 'EXPENSE'
@@ -102,7 +182,7 @@ export default function Transactions() {
             <div className="d-flex justify-content-between align-items-center mb-3">
                 <div className="d-flex align-items-center gap-2">
                     <Link to="/caisse" className="btn btn-sm btn-outline-secondary">
-                        <i className="bi bi-arrow-left me-1"></i> Caisse
+                        <i className="bi bi-arrow-left me-1"></i> {t('transactions.home.caisse')}
                     </Link>
                     <h2 className="h5 mb-0">{t('transactions.home.title')}</h2>
                 </div>
@@ -217,7 +297,7 @@ export default function Transactions() {
                                             setItems(txs)
                                         } catch (e) {
                                             console.error('Submit failed', e)
-                                            toast.error('Echec de l\'envoi')
+                                            toast.error(t('transactions.home.submitFailed'))
                                         }
                                     }}
                                     onDelete={async () => {

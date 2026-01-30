@@ -1,4 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
+import i18n from '../../i18n';
 import ReactFlow, {
     useNodesState,
     useEdgesState,
@@ -15,6 +17,55 @@ import dagre from 'dagre';
 import { fetchRawUsers, type RawUser } from '@src/services/tree';
 import 'reactflow/dist/style.css';
 import './Tree.css';
+
+const treeResources = {
+    fr: {
+        tree: {
+            seeDetails: 'Voir détails',
+            detailsOf: 'Détails de {{name}}',
+            birthDate: 'DATE DE NAISSANCE',
+            father: 'PÈRE',
+            mother: 'MÈRE',
+            notProvided: 'Non renseigné',
+            na: 'N/A'
+        },
+        common: {
+            close: 'Fermer'
+        }
+    },
+    en: {
+        tree: {
+            seeDetails: 'View details',
+            detailsOf: 'Details of {{name}}',
+            birthDate: 'DATE OF BIRTH',
+            father: 'FATHER',
+            mother: 'MOTHER',
+            notProvided: 'Not provided',
+            na: 'N/A'
+        },
+        common: {
+            close: 'Close'
+        }
+    },
+    ar: {
+        tree: {
+            seeDetails: 'عرض التفاصيل',
+            detailsOf: 'تفاصيل {{name}}',
+            birthDate: 'تاريخ الميلاد',
+            father: 'الأب',
+            mother: 'الأم',
+            notProvided: 'غير محدد',
+            na: 'غير متاح'
+        },
+        common: {
+            close: 'إغلاق'
+        }
+    }
+}
+
+for (const [lng, res] of Object.entries(treeResources)) {
+    i18n.addResourceBundle(lng, 'translation', res as any, true, false)
+}
 
 const UserAvatar = ({ url, firstname, lastname, size = 60 }: { url: string | null, firstname: string, lastname: string, size?: number }) => {
     const style: React.CSSProperties = {
@@ -53,6 +104,7 @@ export const useIsMobile = () => {
 };
 
 const FamilyNode = ({ data }: any) => {
+    const { t } = useTranslation();
     return (
         <div className="family-card card shadow-sm text-center">
             <div className="card-body p-2 d-flex flex-column align-items-center">
@@ -65,7 +117,7 @@ const FamilyNode = ({ data }: any) => {
                 </h6>
 
                 <button className="btn btn-sm btn-outline-primary py-0 px-2" style={{ fontSize: '0.7rem' }}>
-                    Voir détails
+                    {t('tree.seeDetails')}
                 </button>
             </div>
 
@@ -344,6 +396,7 @@ const getLayoutedElements = (users: RawUser[], isMobile: boolean) => {
 };
 
 const TreeContent = () => {
+    const { t } = useTranslation();
     const [nodes, setNodes, onNodesChange] = useNodesState([]);
     const [edges, setEdges, onEdgesChange] = useEdgesState([]);
 
@@ -395,7 +448,7 @@ const TreeContent = () => {
                         <div className="modal-dialog modal-dialog-centered" role="document">
                             <div className="modal-content border-0 shadow rounded-4">
                                 <div className="modal-header border-0">
-                                    <h5 className="modal-title fw-bold">Détails de {selectedUser.firstname}</h5>
+                                    <h5 className="modal-title fw-bold">{t('tree.detailsOf', { name: selectedUser.firstname })}</h5>
                                     <button type="button" className="btn-close" onClick={closeModal}></button>
                                 </div>
                                 <div className="modal-body px-4">
@@ -409,29 +462,29 @@ const TreeContent = () => {
                                             <div className="d-flex align-items-center mb-3 p-2 bg-white rounded shadow-sm">
                                                 <div className="me-3 fs-3">🎂</div>
                                                 <div>
-                                                    <small className="text-muted fw-bold d-block" style={{ fontSize: '0.75rem' }}>DATE DE NAISSANCE</small>
-                                                    <span className="fw-medium">{selectedUser.birthday || 'N/A'}</span>
+                                                    <small className="text-muted fw-bold d-block" style={{ fontSize: '0.75rem' }}>{t('tree.birthDate')}</small>
+                                                    <span className="fw-medium">{selectedUser.birthday || t('tree.na')}</span>
                                                 </div>
                                             </div>
                                             <div className="d-flex align-items-center mb-3 p-2 bg-white rounded shadow-sm">
                                                 <div className="me-3 fs-3">👨‍👦</div>
                                                 <div>
-                                                    <small className="text-muted fw-bold d-block" style={{ fontSize: '0.75rem' }}>PÈRE</small>
-                                                    <span className="fw-medium">{selectedUser.father_name || 'Non renseigné'}</span>
+                                                    <small className="text-muted fw-bold d-block" style={{ fontSize: '0.75rem' }}>{t('tree.father')}</small>
+                                                    <span className="fw-medium">{selectedUser.father_name || t('tree.notProvided')}</span>
                                                 </div>
                                             </div>
                                             <div className="d-flex align-items-center p-2 bg-white rounded shadow-sm">
                                                 <div className="me-3 fs-3">👩‍👦</div>
                                                 <div>
-                                                    <small className="text-muted fw-bold d-block" style={{ fontSize: '0.75rem' }}>MÈRE</small>
-                                                    <span className="fw-medium">{selectedUser.mother_name || 'Non renseigné'}</span>
+                                                    <small className="text-muted fw-bold d-block" style={{ fontSize: '0.75rem' }}>{t('tree.mother')}</small>
+                                                    <span className="fw-medium">{selectedUser.mother_name || t('tree.notProvided')}</span>
                                                 </div>
                                             </div>
                                         </div>
                                     </div>
                                 </div>
                                 <div className="modal-footer border-0 justify-content-center pb-4">
-                                    <button type="button" className="btn btn-primary px-5 rounded-pill fw-bold shadow-sm" onClick={closeModal}>Fermer</button>
+                                    <button type="button" className="btn btn-primary px-5 rounded-pill fw-bold shadow-sm" onClick={closeModal}>{t('common.close')}</button>
                                 </div>
                             </div>
                         </div>

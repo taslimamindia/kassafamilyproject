@@ -1,12 +1,113 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { toast } from 'react-toastify'
+import i18n from '../../../i18n'
 import { createTransaction, listPaymentMethods, type PaymentMethod, uploadTransactionProof } from '../../../services/transactions'
 import { getUsers, getCurrentUser, type User } from '../../../services/users'
 import { getRolesForUser } from '../../../services/roleAttributions'
 import { useTranslation } from 'react-i18next'
 import { paymentMethodOptions, transactionKindOptions, mapKindToBackend, type TransactionKind } from '../../../constants/transactionOptions'
 import './AddTransaction.css'
+
+const addTransactionResources = {
+    fr: {
+        transactions: {
+            add: {
+                title: 'Nouvelle transaction',
+                member: 'Membre',
+                meBadge: 'Moi',
+                memberHelp: 'Choisissez le membre concerné',
+                selectMember: 'Sélectionner un membre',
+                amount: 'Montant',
+                amountHelp: 'Saisissez le montant en GNF. Le rang indique la grandeur (Centaines, Milliers, etc.).',
+                amountPlaceholder: 'Ex: 50 000',
+                currency: 'Devise: Franc Guinéen (GNF)',
+                type: 'Type',
+                typeHelp: 'Choisissez le type de transaction (Cotisation, Dépense, etc.).',
+                selectType: 'Sélectionnez le type',
+                requiredFields: 'Tous les champs sont requis',
+                createFailed: 'Erreur lors de la création',
+                createdSuccess: 'Transaction créée avec succès',
+                paymentMethod: 'Méthode de paiement',
+                methodHelp: 'Sélectionnez la méthode de paiement (ex: Orange Money)',
+                selectMethod: 'Sélectionner une méthode',
+                proofType: 'Type de preuve',
+                proofTransactionNumber: 'Numéro de transaction',
+                proofLink: 'Lien (image)',
+                proofReference: 'Preuve (Référence ou Fichier)',
+                cancel: 'Annuler',
+                create: 'Créer (Brouillon)',
+                createAndSend: 'Créer et Envoyer'
+            }
+        }
+    },
+    en: {
+        transactions: {
+            add: {
+                title: 'New Transaction',
+                member: 'Member',
+                meBadge: 'Me',
+                memberHelp: 'Choose the concerned member',
+                selectMember: 'Select a member',
+                amount: 'Amount',
+                amountHelp: 'Enter amount in GNF.',
+                amountPlaceholder: 'Ex: 50,000',
+                currency: 'Currency: Guinean Franc (GNF)',
+                type: 'Type',
+                typeHelp: 'Choose transaction type',
+                selectType: 'Select type',
+                requiredFields: 'All fields are required',
+                createFailed: 'Error creating transaction',
+                createdSuccess: 'Transaction created successfully',
+                paymentMethod: 'Payment method',
+                methodHelp: 'Select payment method',
+                selectMethod: 'Select a method',
+                proofType: 'Proof type',
+                proofTransactionNumber: 'Transaction Number',
+                proofLink: 'Link (image)',
+                proofReference: 'Proof (Reference or File)',
+                cancel: 'Cancel',
+                create: 'Create (Draft)',
+                createAndSend: 'Create and Send'
+            }
+        }
+    },
+    ar: {
+        transactions: {
+            add: {
+                title: 'معاملة جديدة',
+                member: 'العضو',
+                meBadge: 'أنا',
+                memberHelp: 'اختر العضو المعني',
+                selectMember: 'اختر عضواً',
+                amount: 'المبلغ',
+                amountHelp: 'أدخل المبلغ بـ GNF.',
+                amountPlaceholder: 'مثال: 50,000',
+                currency: 'العملة: فرنك غيني (GNF)',
+                type: 'النوع',
+                typeHelp: 'اختر نوع المعاملة',
+                selectType: 'اختر النوع',
+                requiredFields: 'جميع الحقول مطلوبة',
+                createFailed: 'خطأ في إنشاء المعاملة',
+                createdSuccess: 'تم إنشاء المعاملة بنجاح',
+                paymentMethod: 'طريقة الدفع',
+                methodHelp: 'اختر طريقة الدفع',
+                selectMethod: 'اختر طريقة',
+                proofType: 'نوع الإثبات',
+                proofTransactionNumber: 'رقم المعاملة',
+                proofLink: 'رابط (صورة)',
+                proofReference: 'الإثبات (مرجع أو ملف)',
+                cancel: 'إلغاء',
+                create: 'إنشاء (مسودة)',
+                createAndSend: 'إنشاء وإرسال'
+            }
+        }
+    }
+}
+
+for (const [lng, res] of Object.entries(addTransactionResources)) {
+    i18n.addResourceBundle(lng, 'translation', res as any, true, false)
+}
 
 export default function AddTransaction({ onSuccess, onCancel }: { onSuccess?: () => void; onCancel?: () => void }) {
     const navigate = useNavigate()

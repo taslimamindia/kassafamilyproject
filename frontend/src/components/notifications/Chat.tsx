@@ -1,9 +1,98 @@
 import { useState, useEffect } from 'react'
 import { toast } from 'react-toastify'
 import { useTranslation } from 'react-i18next'
+import i18n from '../../i18n'
 import { sendMessage, type MessageCreate } from '../../services/messages'
 import { getReceivers, type User } from '../../services/users'
 import './Chat.css'
+
+const chatResources = {
+    fr: {
+        notifications: {
+            chat: {
+                tooLong: 'Le message est trop long ({{count}} mots). La limite est de 150 mots.',
+                codeNotAllowed: 'Le message semble contenir du code ou du HTML, ce qui n\'est pas autorisé. Veuillez envoyer uniquement du texte brut.',
+                sent: 'Message envoyé avec succès',
+                sendError: 'Erreur lors de l\'envoi du message'
+            },
+            new: 'Nouveau message',
+            recipient: 'Destinataire',
+            recipientSupport: 'Support technique',
+            recipientBoard: 'Conseil d\'administration',
+            recipientTreasury: 'Trésorerie',
+            recipientMember: 'Un membre (Sélectionner)',
+            membersSelect: 'Membres (sélection multiple possible)',
+            loadingMembers: 'Chargement des membres...',
+            messageLabel: 'Message',
+            messagePlaceholder: 'Votre message...',
+            wordCount: '{{count}} / 150 mots',
+        },
+        common: {
+            close: 'Fermer',
+            cancel: 'Annuler',
+            sending: 'Envoi...',
+            send: 'Envoyer'
+        }
+    },
+    en: {
+        notifications: {
+            chat: {
+                tooLong: 'Message is too long ({{count}} words). Limit is 150 words.',
+                codeNotAllowed: 'Message seems to contain code or HTML, which is not allowed. Please send plain text only.',
+                sent: 'Message sent successfully',
+                sendError: 'Error while sending message'
+            },
+            new: 'New message',
+            recipient: 'Recipient',
+            recipientSupport: 'Technical Support',
+            recipientBoard: 'Board of Directors',
+            recipientTreasury: 'Treasury',
+            recipientMember: 'A member (Select)',
+            membersSelect: 'Members (multiple selection possible)',
+            loadingMembers: 'Loading members...',
+            messageLabel: 'Message',
+            messagePlaceholder: 'Your message...',
+            wordCount: '{{count}} / 150 words',
+        },
+        common: {
+            close: 'Close',
+            cancel: 'Cancel',
+            sending: 'Sending...',
+            send: 'Send'
+        }
+    },
+    ar: {
+        notifications: {
+            chat: {
+                tooLong: 'الرسالة طويلة جداً ({{count}} كلمة). الحد الأقصى هو 150 كلمة.',
+                codeNotAllowed: 'يبدو أن الرسالة تحتوي على كود أو HTML، وهو غير مسموح به. يرجى إرسال نص عادي فقط.',
+                sent: 'تم إرسال الرسالة بنجاح',
+                sendError: 'خطأ أثناء إرسال الرسالة'
+            },
+            new: 'رسالة جديدة',
+            recipient: 'المستلم',
+            recipientSupport: 'الدعم الفني',
+            recipientBoard: 'مجلس الإدارة',
+            recipientTreasury: 'الخزينة',
+            recipientMember: 'عضو (تحديد)',
+            membersSelect: 'الأعضاء (يمكن تحديد أكثر من واحد)',
+            loadingMembers: 'جارٍ تحميل الأعضاء...',
+            messageLabel: 'الرسالة',
+            messagePlaceholder: 'رسالتك...',
+            wordCount: '{{count}} / 150 كلمة',
+        },
+        common: {
+            close: 'إغلاق',
+            cancel: 'إلغاء',
+            sending: 'جارٍ الإرسال...',
+            send: 'إرسال'
+        }
+    }
+}
+
+for (const [lng, res] of Object.entries(chatResources)) {
+    i18n.addResourceBundle(lng, 'translation', res as any, true, false)
+}
 
 type ChatProps = {
     onClose: () => void
@@ -53,6 +142,7 @@ export default function Chat({ onClose }: ChatProps) {
                 recipient_id: recipientType === 'member' ? selectedMembers.map(s => parseInt(s)) : undefined
             })
             onClose()
+            toast.success(t('notifications.chat.sent', "Message envoyé avec succès"))
         } catch (error: any) {
             console.error(error)
             if (error?.body?.detail) {
@@ -142,7 +232,7 @@ export default function Chat({ onClose }: ChatProps) {
                             placeholder={t('notifications.messagePlaceholder', 'Votre message...')}
                         ></textarea>
                         <div className="text-end text-muted small mt-1">
-                            {t('notifications.wordCount', `${message.trim() ? message.trim().split(/\s+/).length : 0} / 150 mots`)}
+                            {`${message.trim() ? message.trim().split(/\s+/).length : 0} / 150 mots`}
                         </div>
                     </div>
                 </div>

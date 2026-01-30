@@ -2,7 +2,120 @@ import { useState } from 'react'
 import { type Transaction } from '../../services/transactions'
 import { type User } from '../../services/users'
 import { useTranslation } from 'react-i18next'
+import i18n from '../../i18n'
 import Modal from '../common/Modal'
+
+const transactionCardResources = {
+    fr: {
+        transactions: {
+            home: {
+                byMe: 'Par moi',
+                by: 'Par',
+                thDate: 'Date',
+                thPayment: 'Mode',
+                accountNumber: 'N° compte',
+                thStatus: 'Statut',
+                approvedBy: 'Validations'
+            },
+            actions: {
+                submit: 'Soumettre',
+                proof: 'Preuve',
+                open: 'Ouvrir',
+                submitTitle: 'Soumettre',
+            },
+            proof: {
+                title: 'Preuve de transaction'
+            }
+        },
+        transactionTypes: {
+            COTISATION: 'Cotisation',
+            DONS: 'Dons',
+            DEPENSE: 'Dépense',
+            EXPENSE: 'Dépense' // Backend might return EXPENSE
+        },
+        transactionStatus: {
+            SAVED: 'Brouillon',
+            PENDING: 'En attente',
+            PARTIALLY_APPROVED: 'Part. Approuvé',
+            VALIDATED: 'Validé',
+            REJECTED: 'Rejeté'
+        }
+    },
+    en: {
+        transactions: {
+            home: {
+                byMe: 'By me',
+                by: 'By',
+                thDate: 'Date',
+                thPayment: 'Mode',
+                accountNumber: 'Acc No',
+                thStatus: 'Status',
+                approvedBy: 'Approvals'
+            },
+             actions: {
+                submit: 'Submit',
+                proof: 'Proof',
+                open: 'Open',
+                submitTitle: 'Submit'
+            },
+            proof: {
+                title: 'Transaction Proof'
+            }
+        },
+        transactionTypes: {
+            COTISATION: 'Contribution',
+            DONS: 'Donation',
+            DEPENSE: 'Expense',
+            EXPENSE: 'Expense'
+        },
+        transactionStatus: {
+            SAVED: 'Draft',
+            PENDING: 'Pending',
+            PARTIALLY_APPROVED: 'Part. Approved',
+            VALIDATED: 'Validated',
+            REJECTED: 'Rejected'
+        }
+    },
+    ar: {
+        transactions: {
+            home: {
+                byMe: 'بواسطتي',
+                by: 'بواسطة',
+                thDate: 'التاريخ',
+                thPayment: 'الوضع',
+                accountNumber: 'رقم الحساب',
+                thStatus: 'الحالة',
+                approvedBy: 'الموافقات'
+            },
+             actions: {
+                submit: 'إرسال',
+                proof: 'إثبات',
+                open: 'فتح',
+                submitTitle: 'إرسال'
+            },
+            proof: {
+                title: 'إثبات المعاملة'
+            }
+        },
+        transactionTypes: {
+            COTISATION: 'مساهمة',
+            DONS: 'تبرعات',
+            DEPENSE: 'نفقة',
+            EXPENSE: 'نفقة'
+        },
+        transactionStatus: {
+            SAVED: 'مسودة',
+            PENDING: 'قيد الانتظار',
+            PARTIALLY_APPROVED: 'موافق عليه جزئياً',
+            VALIDATED: 'تم التحقق',
+            REJECTED: 'مرفوض'
+        }
+    }
+}
+
+for (const [lng, res] of Object.entries(transactionCardResources)) {
+    i18n.addResourceBundle(lng, 'translation', res as any, true, false)
+}
 
 interface TransactionCardProps {
     transaction: Transaction
@@ -173,7 +286,7 @@ export default function TransactionCard({
                     )}
 
                     {canSubmit && (
-                        <button className="btn btn-sm btn-success rounded-pill px-2 px-md-3" onClick={onSubmit} title="Soumettre">
+                        <button className="btn btn-sm btn-success rounded-pill px-2 px-md-3" onClick={onSubmit} title={t('transactions.actions.submitTitle', 'Soumettre')}>
                             <i className="bi bi-send me-1"></i>
                         </button>
                     )}
@@ -189,19 +302,19 @@ export default function TransactionCard({
                     )}
                     {hasProofUrl && (
                         <button className="btn btn-sm btn-info text-white rounded-pill px-2 px-md-3" onClick={() => setShowProof(true)}>
-                            <i className="bi bi-eye me-1"></i> Preuve
+                            <i className="bi bi-eye me-1"></i> {t('transactions.actions.proof', 'Preuve')}
                         </button>
                     )}
                 </div>
             </div>
 
             {hasProofUrl && (
-                <Modal isOpen={showProof} onClose={() => setShowProof(false)} title="Preuve de transaction" size="lg">
+                <Modal isOpen={showProof} onClose={() => setShowProof(false)} title={t('transactions.proof.title', 'Preuve de transaction')} size="lg">
                     <div className="text-center p-3">
                         <img src={tx.proof_reference} alt="Preuve" className="img-fluid rounded shadow-sm" style={{ maxHeight: '80vh' }} />
                         <div className="mt-3">
                             <a href={tx.proof_reference} target="_blank" rel="noopener noreferrer" className="btn btn-outline-primary">
-                                <i className="bi bi-box-arrow-up-right me-2"></i> Ouvrir
+                                <i className="bi bi-box-arrow-up-right me-2"></i> {t('transactions.actions.open', 'Ouvrir')}
                             </a>
                         </div>
                     </div>

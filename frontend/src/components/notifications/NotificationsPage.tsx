@@ -1,10 +1,84 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
+import i18n from '@src/i18n'
 import { getMessages, markAllMessagesRead, markMessageRead, getUserMessageInfo } from '@src/services/messages'
 import { getCurrentUser } from '@src/services/users'
 import Modal from '../common/Modal'
 import './Notification.css'
+
+const notificationsPageResources = {
+    fr: {
+        notifications: {
+            loadFailed: 'Échec du chargement des messages',
+            header: 'Notifications',
+            unreadLabel: 'Non lues',
+            markAllRead: 'Marquer toutes lues',
+            none: 'Aucun message',
+            markOneRead: 'Marquer lue',
+            open: 'Ouvrir',
+            received: 'Reçu',
+            sender: 'Expéditeur',
+            receiver: 'Destinataire',
+            type: 'Type',
+            readLabel: 'Lu',
+            goToLink: 'Aller au lien'
+        },
+        common: {
+            loading: 'Chargement…',
+            yes: 'Oui',
+            no: 'Non'
+        }
+    },
+    en: {
+        notifications: {
+            loadFailed: 'Failed to load messages',
+            header: 'Notifications',
+            unreadLabel: 'Unread',
+            markAllRead: 'Mark all as read',
+            none: 'No messages',
+            markOneRead: 'Mark as read',
+            open: 'Open',
+            received: 'Received',
+            sender: 'Sender',
+            receiver: 'Recipient',
+            type: 'Type',
+            readLabel: 'Read',
+            goToLink: 'Go to link'
+        },
+        common: {
+            loading: 'Loading…',
+            yes: 'Yes',
+            no: 'No'
+        }
+    },
+    ar: {
+        notifications: {
+            loadFailed: 'فشل تحميل الرسائل',
+            header: 'الإشعارات',
+            unreadLabel: 'غير مقروءة',
+            markAllRead: 'تحديد الكل كمقروء',
+            none: 'لا توجد رسائل',
+            markOneRead: 'تحديد كمقروءة',
+            open: 'فتح',
+            received: 'تم الاستلام',
+            sender: 'المرسل',
+            receiver: 'المستلم',
+            type: 'النوع',
+            readLabel: 'مقروء',
+            goToLink: 'الذهاب إلى الرابط'
+        },
+        common: {
+            loading: 'جارٍ التحميل…',
+            yes: 'نعم',
+            no: 'لا'
+        }
+    }
+}
+
+for (const [lng, res] of Object.entries(notificationsPageResources)) {
+    i18n.addResourceBundle(lng, 'translation', res as any, true, false)
+}
 
 export default function NotificationsPage() {
     const { t } = useTranslation()
