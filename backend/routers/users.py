@@ -13,13 +13,12 @@ from utils import (
     generate_username_logic,
     ensure_unique_username,
     update_users_graph,
-    get_family_ids,
     get_family_rows,
-    send_notification,
 )
 from auth_utils import hash_password
 from settings import settings
 from aws_file import AwsFile
+from .messages import send_notification
 
 
 router = APIRouter()
@@ -240,14 +239,6 @@ async def create_user(
     current_user: dict = Depends(get_current_user),
 ):
     data, upload = await parse_create_request(request)
-    if upload is not None:
-        logger.info(
-            "[users] Image reçue (création): filename=%s, content_type=%s",
-            getattr(upload, "filename", None),
-            getattr(upload, "content_type", None),
-        )
-    else:
-        logger.info("[users] Aucune image reçue (création)")
     body = UserCreate(**data)
 
     if not body.username or not body.username.strip():
@@ -267,6 +258,7 @@ async def create_user(
             body.username = await asyncio.to_thread(
                 ensure_unique_username, body.username, cursor._cursor
             )
+            
         except ValueError as e:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
 
@@ -314,6 +306,7 @@ async def create_user(
                 body.isactive = 0
 
     default_hashed = hash_password(settings.user_password_default)
+    
     # Authorization for creation: admin anytime; group admin allowed; others forbidden
     if not await has_role(cursor, current_user["id"], "admin"):
         if not await has_role(cursor, current_user["id"], "admingroup"):
@@ -374,10 +367,8 @@ async def create_user(
     placeholders = ", ".join(["%s"] * len(values))
     sql = f"INSERT INTO users ({', '.join(fields)}) VALUES ({placeholders})"
 
-    await cursor.execute(sql, tuple(values))
     try:
-        await cursor.commit()
-        
+        await cursor.execute(sql, tuple(values))
     except Exception as e:
         logger.exception("[users] Commit failed during create_user")
         raise HTTPException(
@@ -413,15 +404,17 @@ async def create_user(
                             "INSERT INTO role_attribution (users_id, roles_id) VALUES (%s, %s)",
                             (new_id, rid),
                         )
-                        await cursor.commit()
                     except Exception:
-                        logger.error(
-                            f"[users] Failed to assign role {r_str} to {new_id}"
+                        raise HTTPException(
+                            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                            detail=f"Failed to assign role {r_str} to user {new_id}"
                         )
 
     # Auto-assignments when created by a group admin
     try:
-        if await has_role(cursor, current_user["id"], "admingroup"):
+        if not await has_role(cursor, current_user["id"], "admin") and \
+            await has_role(cursor, current_user["id"], "admingroup"
+        ):
             assignments_to_insert = []
 
             # Check if assignment to current admingroup already exists
@@ -483,7 +476,6 @@ async def create_user(
                         "INSERT INTO family_assignation (id, users_assigned_id, users_responsable_id) VALUES (%s, %s, %s)",
                         assignments_to_insert,
                     )
-                    await cursor.commit()
                 except Exception:
                     logger.exception(
                         "[users] Failed to auto-assign family_assignation for new user %s",
@@ -494,33 +486,51 @@ async def create_user(
             "[users] Unexpected error during admingroup auto-assign for new user %s",
             new_id,
         )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Unexpected error during auto-assignments",
+        )  
+        
     await cursor.execute("SELECT * FROM users WHERE id = %s", (new_id,))
     user = await cursor.fetchone()
 
     # Notify admins about new user
-    try:
-        await cursor.execute(
-            """
-            SELECT ra.users_id 
-            FROM role_attribution ra
-            JOIN roles r ON r.id = ra.roles_id
-            WHERE r.role = 'admin'
-            """
+    if not await has_role(cursor, current_user["id"], "admin"):
+        try:
+            await cursor.execute(
+                """
+                SELECT ra.users_id 
+                FROM role_attribution ra
+                JOIN roles r ON r.id = ra.roles_id
+                WHERE r.role = 'admin'
+                """
+            )
+            admin_rows = await cursor.fetchall()
+            admin_ids = [r["users_id"] if isinstance(r, dict) else r[0] for r in admin_rows]
+            
+            # Sender informations
+            sender_name = f"{current_user.get('firstname', '')} {current_user.get('lastname', '')} ({current_user.get('username', '')})".strip()
+            # New user name
+            user_name = f"{body.firstname} {body.lastname}".strip()
+            msg = f"{sender_name} a créé un nouvel utilisateur {user_name}."
+            
+            await send_notification(
+                cursor,
+                admin_ids,
+                msg,
+                sender_id=current_user["id"],
+                link=f"/users",
+                exclude_sender=True,
+            )
+        except Exception as e:
+            logger.warning(f"[users] Failed to notify admins about new user: {e}")
+            raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to notify admins about new user"
         )
-        admin_rows = await cursor.fetchall()
-        admin_ids = [r["users_id"] if isinstance(r, dict) else r[0] for r in admin_rows]
-
-        user_name = f"{body.firstname} {body.lastname}".strip()
-        msg = f"Un nouvel utilisateur {user_name} a été créé."
-        await send_notification(
-            cursor,
-            admin_ids,
-            msg,
-            sender_id=current_user["id"],
-            link=f"/users",
-        )
-    except Exception as e:
-        logger.warning(f"[users] Failed to notify admins about new user: {e}")
+        
+    # Global commit
+    await cursor.commit()
 
     if user:
         user.pop("password", None)
@@ -1048,12 +1058,6 @@ async def update_current_user_profile(
     await cursor.execute(sql, tuple(values))
     try:
         await cursor.commit()
-        try:
-            await update_users_graph(request.app, cursor)
-        except Exception:
-            logger.exception(
-                "[users] Failed to refresh users graph after current user profile update"
-            )
     except Exception:
         logger.exception("[users] Commit failed during update_current_user_profile")
         raise HTTPException(

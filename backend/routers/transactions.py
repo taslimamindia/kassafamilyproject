@@ -17,7 +17,7 @@ from dependencies import get_cursor, get_current_user, has_role, get_user_roles
 from settings import settings
 from aws_file import AwsFile
 import uuid
-from utils import send_notification
+from .messages import send_notification
 
 
 router = APIRouter()
@@ -250,7 +250,13 @@ async def notify_transactions_validated(cursor, tx_ids: List[int]):
             # Use sender_id=None (System) or maybe the treasurer who triggered it? 
             # But in bulk there might be multiple approvers over time, this is the final validation event.
             # We'll use None or 1.
-            await send_notification(cursor, [uid], msg, link="/transactions")
+            await send_notification(
+                cursor=cursor, 
+                recipient_ids=[uid], 
+                message_text=msg, 
+                message_type="APPROVAL", 
+                link="/transactions"
+            )
 
 
 async def notify_treasurers_new_transaction(cursor, sender_id: int, count: int = 1):
@@ -285,7 +291,14 @@ async def notify_treasurers_new_transaction(cursor, sender_id: int, count: int =
 
     msg_text = f"{sender_name} vous a soumis {'une transaction' if count == 1 else f'{count} transactions'} à valider"
     
-    await send_notification(cursor, treasurer_ids, msg_text, sender_id=sender_id, link="/approvals")
+    await send_notification(
+        cursor=cursor, 
+        recipient_ids=treasurer_ids, 
+        message_text=msg_text, 
+        sender_id=sender_id, 
+        message_type="APPROVAL", 
+        link="/approvals"
+    )
 
 
 # -----------------------------
@@ -1087,16 +1100,20 @@ async def reject_transaction(
     if body.reason:
         await cursor.execute(
             """INSERT INTO transaction_approvals (role_at_approval, approved_at, note, transactions_id, users_id)
-               VALUES (%s, %s, %s, %s, %s)""",
+            VALUES (%s, %s, %s, %s, %s)""",
             (rec_role, now, f"REJETÉ: {body.reason}", tx_id, current_user["id"])
         )
 
     # 2. Update status to REJECTED
-    await cursor.execute(
+    try:
+        await cursor.execute(
         "UPDATE transactions SET status = 'REJECTED', updated_by = %s, updated_at = %s WHERE id = %s",
         (current_user["id"], now, tx_id),
-    )
-    await cursor.commit()
+        )
+        await cursor.commit()
+    except Exception:
+        logger.exception("[transactions] Commit failed during reject_transaction")
+        raise HTTPException(status_code=500, detail="Database commit failed")
     
     await cursor.execute("SELECT * FROM transactions WHERE id = %s", (tx_id,))
     return await cursor.fetchone()
@@ -1133,11 +1150,15 @@ async def bulk_submit_transactions(
     if not valid_ids:
         return {"count": 0}
 
-    now = datetime.now()
-    p_valid = ",".join(["%s"] * len(valid_ids))
-    update_sql = f"UPDATE transactions SET status = 'PENDING', issubmitted = 1, updated_at = %s, updated_by = %s WHERE id IN ({p_valid})"
-    await cursor.execute(update_sql, (now, current_user["id"]) + tuple(valid_ids))
-    await cursor.commit()
+    try:
+        now = datetime.now()
+        p_valid = ",".join(["%s"] * len(valid_ids))
+        update_sql = f"UPDATE transactions SET status = 'PENDING', issubmitted = 1, updated_at = %s, updated_by = %s WHERE id IN ({p_valid})"
+        await cursor.execute(update_sql, (now, current_user["id"]) + tuple(valid_ids))
+        await cursor.commit()
+    except Exception:
+        logger.exception("[transactions] Commit failed during bulk_submit_transactions")
+        raise HTTPException(status_code=500, detail="Database commit failed")
 
     await notify_treasurers_new_transaction(cursor, current_user["id"], count=len(valid_ids))
     

@@ -1,14 +1,86 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import List, Optional
 from datetime import datetime
-import httpx
 from dependencies import get_cursor, get_current_user
 from models import Message, MessageCreate, MessageUserInfo
 from settings import settings
+import httpx
+import logging
 
 
 router = APIRouter()
 
+logger = logging.getLogger("Messages")
+
+async def send_notification(
+    cursor,
+    recipient_ids: List[int],
+    message_text: str,
+    sender_id: Optional[int] = None,
+    message_type: str = "MESSAGE",
+    link: Optional[str] = None,
+    exclude_sender: bool = True,
+):
+    """
+        Sends a message to a list of recipients.
+        Handles 'messages' insertion and 'messages_recipients' entries.
+        Auto-excludes sender_id from recipient_ids if present (unless exclude_sender=False).
+    """
+    
+    if not recipient_ids:
+        return
+
+    # Filter out sender if present, and remove duplicates
+    targets = set(recipient_ids)
+    if exclude_sender and sender_id is not None and sender_id in targets:
+        try:
+            targets.remove(sender_id)
+        except KeyError:
+            raise HTTPException(status_code=500, detail="Error excluding sender from recipients")   
+    
+    if not targets:
+        return
+
+    now = datetime.now()
+    try:
+        # 1. Insert message body
+        await cursor.execute(
+            """
+            INSERT INTO messages (message, message_type, received_at, link)
+            VALUES (%s, %s, %s, %s)
+            """,
+            (message_text, message_type, now, link),
+        )
+        # Try to get the inserted message id
+        msg_id = cursor.lastrowid
+        if not msg_id:
+            await cursor.execute("SELECT LAST_INSERT_ID() AS id")
+            row = await cursor.fetchone()
+            msg_id = row.get("id") if isinstance(row, dict) else row[0]
+
+        # 2. Insert recipients with explicit IDs since messages_recipients.id is not AUTO_INCREMENT
+        await cursor.execute("SELECT COALESCE(MAX(id), 0) AS max_id FROM messages_recipients")
+        row = await cursor.fetchone()
+        next_id = (row.get("max_id") if isinstance(row, dict) else row[0]) or 0
+        next_id += 1
+
+        values = []
+        for receiver_id in targets:
+            values.append((next_id, 0, sender_id, receiver_id, msg_id))
+            next_id += 1
+
+        if values:
+            await cursor.executemany(
+                """
+                INSERT INTO messages_recipients (id, isreaded, sender_id, receiver_id, messages_id)
+                VALUES (%s, %s, %s, %s, %s)
+                """,
+                values,
+            )
+            logger.info(f"Notification sent to {len(targets)} recipients.")
+    except Exception as e:
+        logger.error(f"[utils] send_notification failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to send notification: {e}")
 
 async def validate_message_with_ai(content: str) -> bool:
     if not settings.fireworks_api_key:
@@ -43,17 +115,20 @@ async def validate_message_with_ai(content: str) -> bool:
             if response.status_code == 200:
                 result = response.json()
                 if "choices" in result and len(result["choices"]) > 0:
-                    message_obj = result["choices"][0]["message"]
+                    message_obj = result["choices"][0].get("message", {})
                     # Get content safely
-                    answer = message_obj.get("content", "") or ""
-                    answer = answer.strip().upper()
-                    
-                    # Check for UNSAFE
+                    answer = (message_obj.get("content") or "").strip().upper()
+
+                    # Reject only when explicitly UNSAFE
                     if "UNSAFE" in answer:
                         return False
-            return False
-    except Exception as e:
-        return False
+                    # Accept if explicitly SAFE or unclear
+                    return True
+            # If the moderation service doesn't respond as expected, be permissive
+            return True
+    except Exception:
+        # On moderation failure, default to allowing the message
+        return True
 
 
 @router.get("/messages", response_model=List[Message])
@@ -155,8 +230,7 @@ async def send_message(msg: MessageCreate, cursor = Depends(get_cursor), current
         target_users_ids = [r['users_id'] for r in rows]
     
     if not target_users_ids:
-        # If no one has the role, maybe we should warn? For now let's just return success or error
-        pass
+        raise HTTPException(status_code=400, detail="Aucun destinataire valide trouvé.")
 
     created_at = datetime.now()
     message_type = 'MESSAGE'
