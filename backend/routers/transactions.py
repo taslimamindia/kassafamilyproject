@@ -183,7 +183,7 @@ async def notify_transactions_validated(cursor, tx_ids: List[int]):
         return
 
     placeholders = ",".join(["%s"] * len(tx_ids))
-    
+
     # Fetch details: id, users_id, recorded_by_id
     query = f"""
         SELECT t.id, t.users_id, t.recorded_by_id
@@ -192,23 +192,25 @@ async def notify_transactions_validated(cursor, tx_ids: List[int]):
     """
     await cursor.execute(query, tuple(tx_ids))
     rows = await cursor.fetchall()
-    
+
     # Map user_id -> { as_owner: count, as_creator: count }
     # optimizing to just counts to avoid huge messages list, generic message is better for bulk
-    notifications = {} 
+    notifications = {}
 
     for r in rows:
         tid = r["id"] if isinstance(r, dict) else r[0]
         uid = r["users_id"] if isinstance(r, dict) else r[2]
         rid = r["recorded_by_id"] if isinstance(r, dict) else r[3]
-        
+
         # Check eligibility for owner
-        if uid not in notifications: notifications[uid] = {"owner_cnt": 0, "creator_cnt": 0}
+        if uid not in notifications:
+            notifications[uid] = {"owner_cnt": 0, "creator_cnt": 0}
         notifications[uid]["owner_cnt"] += 1
-        
+
         # Check eligibility for creator (if different)
         if rid != uid:
-            if rid not in notifications: notifications[rid] = {"owner_cnt": 0, "creator_cnt": 0}
+            if rid not in notifications:
+                notifications[rid] = {"owner_cnt": 0, "creator_cnt": 0}
             notifications[rid]["creator_cnt"] += 1
 
     all_user_ids = list(notifications.keys())
@@ -216,7 +218,7 @@ async def notify_transactions_validated(cursor, tx_ids: List[int]):
         return
 
     placeholders_u = ",".join(["%s"] * len(all_user_ids))
-    
+
     # Check isactive=1 and role='member'
     check_sql = f"""
         SELECT DISTINCT u.id
@@ -235,27 +237,31 @@ async def notify_transactions_validated(cursor, tx_ids: List[int]):
     for uid, data in notifications.items():
         if uid not in valid_ids:
             continue
-        
+
         parts = []
         oc = data["owner_cnt"]
         cc = data["creator_cnt"]
 
         if oc > 0:
-            parts.append(f"{'Vos transactions' if oc > 1 else 'Votre transaction'} ({oc}) {'ont' if oc > 1 else 'a'} été validée{'s' if oc > 1 else ''}.")
+            parts.append(
+                f"{'Vos transactions' if oc > 1 else 'Votre transaction'} ({oc}) {'ont' if oc > 1 else 'a'} été validée{'s' if oc > 1 else ''}."
+            )
         if cc > 0:
-            parts.append(f"{'Les transactions' if cc > 1 else 'La transaction'} ({cc}) que vous avez initiée{'s' if cc > 1 else ''} {'ont' if cc > 1 else 'a'} été validée{'s' if cc > 1 else ''}.")
+            parts.append(
+                f"{'Les transactions' if cc > 1 else 'La transaction'} ({cc}) que vous avez initiée{'s' if cc > 1 else ''} {'ont' if cc > 1 else 'a'} été validée{'s' if cc > 1 else ''}."
+            )
 
         if parts:
             msg = " ".join(parts)
-            # Use sender_id=None (System) or maybe the treasurer who triggered it? 
+            # Use sender_id=None (System) or maybe the treasurer who triggered it?
             # But in bulk there might be multiple approvers over time, this is the final validation event.
             # We'll use None or 1.
             await send_notification(
-                cursor=cursor, 
-                recipient_ids=[uid], 
-                message_text=msg, 
-                message_type="APPROVAL", 
-                link="/transactions"
+                cursor=cursor,
+                recipient_ids=[uid],
+                message_text=msg,
+                message_type="APPROVAL",
+                link="/transactions",
             )
 
 
@@ -290,14 +296,14 @@ async def notify_treasurers_new_transaction(cursor, sender_id: int, count: int =
         return
 
     msg_text = f"{sender_name} vous a soumis {'une transaction' if count == 1 else f'{count} transactions'} à valider"
-    
+
     await send_notification(
-        cursor=cursor, 
-        recipient_ids=treasurer_ids, 
-        message_text=msg_text, 
-        sender_id=sender_id, 
-        message_type="APPROVAL", 
-        link="/approvals"
+        cursor=cursor,
+        recipient_ids=treasurer_ids,
+        message_text=msg_text,
+        sender_id=sender_id,
+        message_type="APPROVAL",
+        link="/approvals",
     )
 
 
@@ -714,7 +720,9 @@ async def upload_transaction_proof(
         filename = f"transaction_{tx_id}"
     else:
         # Determine next id from transactions for deterministic file naming
-        await cursor.execute("SELECT IFNULL(MAX(id), 0) + 1 AS next_id FROM transactions")
+        await cursor.execute(
+            "SELECT IFNULL(MAX(id), 0) + 1 AS next_id FROM transactions"
+        )
         row = await cursor.fetchone()
         if isinstance(row, dict):
             next_id = int(row.get("next_id") or 1)
@@ -844,7 +852,9 @@ async def update_transaction(
         )
         pm = await cursor.fetchone()
         if not pm or (pm.get("isactive") if isinstance(pm, dict) else pm[1]) != 1:
-            raise HTTPException(status_code=400, detail="Invalid or inactive payment method")
+            raise HTTPException(
+                status_code=400, detail="Invalid or inactive payment method"
+            )
         fields.append("payment_methods_id = %s")
         vals.append(pm_id)
 
@@ -861,7 +871,9 @@ async def update_transaction(
     if body.proof_reference is not None:
         pr = (body.proof_reference or "").strip()
         if not pr:
-            raise HTTPException(status_code=400, detail="Proof reference cannot be empty")
+            raise HTTPException(
+                status_code=400, detail="Proof reference cannot be empty"
+            )
         fields.append("proof_reference = %s")
         vals.append(pr)
 
@@ -1070,7 +1082,7 @@ async def reject_transaction(
     tx = await cursor.fetchone()
     if not tx:
         raise HTTPException(status_code=404, detail="Transaction not found")
-    
+
     # Identify user role suitable for this transaction type
     user_roles_list = await get_user_roles(cursor, current_user["id"]) or []
     user_roles = set(r.lower() for r in user_roles_list)
@@ -1078,22 +1090,27 @@ async def reject_transaction(
 
     rec_role = None
     allowed = False
-    
+
     if tx_type == "EXPENSE":
-        if "board" in user_roles: rec_role, allowed = "board", True
-        elif "admin" in user_roles: rec_role, allowed = "board", True # Admin acts as board
+        if "board" in user_roles:
+            rec_role, allowed = "board", True
+        elif "admin" in user_roles:
+            rec_role, allowed = "board", True  # Admin acts as board
     elif tx_type in ("CONTRIBUTION", "DONATIONS"):
-        if "treasury" in user_roles: rec_role, allowed = "treasury", True
-        elif "admin" in user_roles: rec_role, allowed = "treasury", True # Admin acts as treasury
+        if "treasury" in user_roles:
+            rec_role, allowed = "treasury", True
+        elif "admin" in user_roles:
+            rec_role, allowed = "treasury", True  # Admin acts as treasury
     else:
         # Fallback or other types if exist
-        if "admin" in user_roles: rec_role, allowed = "admin", True
-    
+        if "admin" in user_roles:
+            rec_role, allowed = "admin", True
+
     if not allowed or not rec_role:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
 
     now = datetime.now()
-    
+
     # 1. Archive the rejection note in transaction_approvals (even though it's a rejection)
     # The requirement is explicit: "stocker cette note dans transaction_approvals.note"
     # We use the determined role.
@@ -1101,20 +1118,20 @@ async def reject_transaction(
         await cursor.execute(
             """INSERT INTO transaction_approvals (role_at_approval, approved_at, note, transactions_id, users_id)
             VALUES (%s, %s, %s, %s, %s)""",
-            (rec_role, now, f"REJETÉ: {body.reason}", tx_id, current_user["id"])
+            (rec_role, now, f"REJETÉ: {body.reason}", tx_id, current_user["id"]),
         )
 
     # 2. Update status to REJECTED
     try:
         await cursor.execute(
-        "UPDATE transactions SET status = 'REJECTED', updated_by = %s, updated_at = %s WHERE id = %s",
-        (current_user["id"], now, tx_id),
+            "UPDATE transactions SET status = 'REJECTED', updated_by = %s, updated_at = %s WHERE id = %s",
+            (current_user["id"], now, tx_id),
         )
         await cursor.commit()
     except Exception:
         logger.exception("[transactions] Commit failed during reject_transaction")
         raise HTTPException(status_code=500, detail="Database commit failed")
-    
+
     await cursor.execute("SELECT * FROM transactions WHERE id = %s", (tx_id,))
     return await cursor.fetchone()
 
@@ -1132,19 +1149,24 @@ async def bulk_submit_transactions(
 
     # Verify ownership or admin
     placeholders = ",".join(["%s"] * len(ids))
-    await cursor.execute(f"SELECT id, recorded_by_id, status FROM transactions WHERE id IN ({placeholders})", tuple(ids))
+    await cursor.execute(
+        f"SELECT id, recorded_by_id, status FROM transactions WHERE id IN ({placeholders})",
+        tuple(ids),
+    )
     rows = await cursor.fetchall()
 
     valid_ids = []
     is_admin = await has_role(cursor, current_user["id"], "admin")
-    
+
     for r in rows:
         tid = r["id"] if isinstance(r, dict) else r[0]
         rid = r["recorded_by_id"] if isinstance(r, dict) else r[1]
         st = r["status"] if isinstance(r, dict) else r[2]
-        
-        if st != 'SAVED': continue
-        if int(rid) != int(current_user["id"]) and not is_admin: continue
+
+        if st != "SAVED":
+            continue
+        if int(rid) != int(current_user["id"]) and not is_admin:
+            continue
         valid_ids.append(tid)
 
     if not valid_ids:
@@ -1160,8 +1182,10 @@ async def bulk_submit_transactions(
         logger.exception("[transactions] Commit failed during bulk_submit_transactions")
         raise HTTPException(status_code=500, detail="Database commit failed")
 
-    await notify_treasurers_new_transaction(cursor, current_user["id"], count=len(valid_ids))
-    
+    await notify_treasurers_new_transaction(
+        cursor, current_user["id"], count=len(valid_ids)
+    )
+
     return {"count": len(valid_ids)}
 
 
@@ -1173,14 +1197,15 @@ async def bulk_approve_transactions(
 ):
     """Bulk approve transactions."""
     ids = body.transaction_ids
-    if not ids: return {"count": 0, "validated": 0}
-    
+    if not ids:
+        return {"count": 0, "validated": 0}
+
     validated_ids = []
     processed_count = 0
-    
+
     user_roles_list = await get_user_roles(cursor, current_user["id"]) or []
     user_roles = set(r.lower() for r in user_roles_list)
-    
+
     # Cache board count
     await cursor.execute(
         """
@@ -1197,39 +1222,51 @@ async def bulk_approve_transactions(
         # Fetch tx
         await cursor.execute("SELECT * FROM transactions WHERE id = %s", (tx_id,))
         tx = await cursor.fetchone()
-        if not tx: continue
-        
-        if tx["status"] not in ("PENDING", "PARTIALLY_APPROVED"): continue
-        
+        if not tx:
+            continue
+
+        if tx["status"] not in ("PENDING", "PARTIALLY_APPROVED"):
+            continue
+
         tx_type = (tx["transaction_type"] or "").upper()
-        
+
         # Access control
         rec_role = None
         allowed = False
         if tx_type == "EXPENSE":
-            if "board" in user_roles: rec_role, allowed = "board", True
-            elif "admin" in user_roles: rec_role, allowed = "admin", True
+            if "board" in user_roles:
+                rec_role, allowed = "board", True
+            elif "admin" in user_roles:
+                rec_role, allowed = "admin", True
         elif tx_type in ("CONTRIBUTION", "DONATIONS"):
-            if "treasury" in user_roles: rec_role, allowed = "treasury", True
-            elif "admin" in user_roles: rec_role, allowed = "admin", True
+            if "treasury" in user_roles:
+                rec_role, allowed = "treasury", True
+            elif "admin" in user_roles:
+                rec_role, allowed = "admin", True
         else:
-            if "admin" in user_roles: rec_role = "admin", True
-        
-        if not allowed or not rec_role: continue
+            if "admin" in user_roles:
+                rec_role = "admin", True
+
+        if not allowed or not rec_role:
+            continue
 
         # Duplicate check
-        await cursor.execute("SELECT 1 FROM transaction_approvals WHERE transactions_id = %s AND users_id = %s", (tx_id, current_user["id"]))
-        if await cursor.fetchone(): continue
-        
+        await cursor.execute(
+            "SELECT 1 FROM transaction_approvals WHERE transactions_id = %s AND users_id = %s",
+            (tx_id, current_user["id"]),
+        )
+        if await cursor.fetchone():
+            continue
+
         # Insert approval
         now = datetime.now()
         await cursor.execute(
             """INSERT INTO transaction_approvals (role_at_approval, approved_at, note, transactions_id, users_id)
                VALUES (%s, %s, %s, %s, %s)""",
-            (rec_role, now, body.note, tx_id, current_user["id"])
+            (rec_role, now, body.note, tx_id, current_user["id"]),
         )
         processed_count += 1
-        
+
         # Check threshold
         await cursor.execute(
             "SELECT COUNT(DISTINCT users_id) as cnt FROM transaction_approvals WHERE transactions_id = %s",
@@ -1258,15 +1295,15 @@ async def bulk_approve_transactions(
                 "UPDATE transactions SET status = %s, updated_by = %s, updated_at = %s WHERE id = %s",
                 ("PARTIALLY_APPROVED", current_user["id"], now, tx_id),
             )
-        
+
     await cursor.commit()
-    
+
     if validated_ids:
         try:
             await notify_transactions_validated(cursor, validated_ids)
         except Exception:
             pass
-    
+
     return {"processed": processed_count, "validated": len(validated_ids)}
 
 
