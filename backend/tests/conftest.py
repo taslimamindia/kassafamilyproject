@@ -1,8 +1,15 @@
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from models.database import Base, engine
+from models_orm.database import Base, engine
 from settings import settings
+from fastapi.testclient import TestClient
+import os
+import sys
+
+from api import app 
+from models_orm.database import engine, get_db
+
 
 # Create a session factory for testing
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
@@ -31,3 +38,26 @@ def db():
     session.close()
     transaction.rollback() # Undo all changes made during the test
     connection.close()
+    
+
+@pytest.fixture
+def client(db):
+    """
+    Creates a TestClient that uses the isolated test database session.
+    This fixture is required for testing API endpoints (routers).
+    """
+    # Override the 'get_db' dependency to use our test session
+    def override_get_db():
+        try:
+            yield db
+        finally:
+            pass
+    
+    app.dependency_overrides[get_db] = override_get_db
+    
+    # Create the client
+    with TestClient(app) as c:
+        yield c
+    
+    # Clean up the override after the test
+    del app.dependency_overrides[get_db]
