@@ -1,7 +1,7 @@
 import pytest
 from sqlalchemy.orm import Session
-from models.finance import PaymentMethods, Transactions, TransactionApprovals
-from models.users import Users
+from models_orm.finance import PaymentMethods, Transactions, TransactionApprovals
+from models_orm.users import Users
 from datetime import datetime, timezone
 
 

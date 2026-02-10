@@ -1,7 +1,7 @@
 import pytest
 from sqlalchemy.orm import Session
-from models.messaging import Messages, MessageRecipients
-from models.users import Users
+from models_orm.messaging import Messages, MessageRecipients
+from models_orm.users import Users
 from datetime import datetime
 
 

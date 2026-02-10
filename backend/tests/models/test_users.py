@@ -1,6 +1,6 @@
 import pytest
 from sqlalchemy.orm import Session
-from models.users import Users, FamilyAssignation
+from models_orm.users import Users, FamilyAssignation
 
 
 def test_users_model(db: Session):

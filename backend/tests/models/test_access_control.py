@@ -1,6 +1,6 @@
 import pytest
 from sqlalchemy.orm import Session
-from models.access_control import Roles, RoleAttribution
+from models_orm.access_control import Roles, RoleAttribution
 
 
 def test_roles_model(db: Session):
