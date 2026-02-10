@@ -6,7 +6,8 @@ import asyncio
 
 import networkx as nx  # type: ignore
 
-from database import get_db_connection
+from models_orm.database import engine
+from sqlalchemy import text, Table, MetaData, select
 
 logger = logging.getLogger("users")
 
@@ -334,12 +335,18 @@ def init_users_graph(app) -> None:
     Uses a synchronous pooled DB connection.
     """
     conn = None
-    cursor = None
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor(dictionary=True)
-        cursor.execute("SELECT id, id_father, id_mother FROM users")
-        rows = cursor.fetchall() or []
+        metadata = MetaData()
+        users_table = Table("users", metadata, autoload_with=engine)
+        with engine.connect() as conn:
+            result = conn.execute(
+                select(
+                    users_table.c.id,
+                    users_table.c.id_father,
+                    users_table.c.id_mother,
+                )
+            )
+            rows = [dict(r) for r in result.mappings().all()]
         G = _build_graph_from_rows(rows)
         # Attach to app state
         if not hasattr(app.state, "users_graph_lock"):
@@ -360,15 +367,7 @@ def init_users_graph(app) -> None:
     except Exception:
         logger.exception("[graph] Failed to initialize users graph")
     finally:
-        try:
-            if cursor:
-                cursor.close()
-        finally:
-            try:
-                if conn:
-                    conn.close()
-            except Exception:
-                pass
+        pass
 
 
 async def update_users_graph(app, cursor_async=None) -> None:
@@ -386,25 +385,19 @@ async def update_users_graph(app, cursor_async=None) -> None:
                 "[graph] Failed to fetch rows with async cursor; falling back to sync"
             )
     if not rows:
-        # Fallback to sync query in thread
+        # Fallback to sync query in thread using SQLAlchemy engine
         def _fetch_sync():
-            conn_ = None
-            cur_ = None
-            try:
-                conn_ = get_db_connection()
-                cur_ = conn_.cursor(dictionary=True)
-                cur_.execute("SELECT id, id_father, id_mother FROM users")
-                return cur_.fetchall() or []
-            finally:
-                try:
-                    if cur_:
-                        cur_.close()
-                finally:
-                    try:
-                        if conn_:
-                            conn_.close()
-                    except Exception:
-                        pass
+            metadata = MetaData()
+            users_table = Table("users", metadata, autoload_with=engine)
+            with engine.connect() as conn_:
+                result = conn_.execute(
+                    select(
+                        users_table.c.id,
+                        users_table.c.id_father,
+                        users_table.c.id_mother,
+                    )
+                )
+                return [dict(r) for r in result.mappings().all()]
 
         rows = await asyncio.to_thread(_fetch_sync)
 
