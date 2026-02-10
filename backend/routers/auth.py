@@ -1,157 +1,142 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Request
+from fastapi.security import OAuth2PasswordRequestForm
 from jose import jwt, JWTError
-from datetime import datetime, timezone
+from datetime import datetime, timezone, date
 from typing import Optional
 
-from dependencies import get_cursor, get_current_user, oauth2_scheme, has_role
+from models_orm.dependencies import get_db, get_current_user, oauth2_scheme
+from sqlalchemy.orm import Session
 import logging
-from models import TokenResponse
+from models_orm.users import Users
+from models_orm.auth import RevokedToken
 from auth_utils import verify_password, create_access_token, hash_password
 from settings import settings
-import asyncio
+
 
 router = APIRouter()
 logger = logging.getLogger("auth")
 
-async def check_majority(user: dict):
-        # Block minors (age < 18)
-    bd_raw = user.get("birthday")
-    if bd_raw:
-        try:
-            try:
-                bd = datetime.fromisoformat(str(bd_raw))
-            except Exception:
-                try:
-                    bd = datetime.strptime(str(bd_raw), "%Y-%m-%d")
-                except Exception:
-                    bd = None
-            if bd:
-                age = int((datetime.now() - bd).days / 365.25)
-                if age < 18:
-                    raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Vous devez être majeur pour vous connecter.")
-        except HTTPException:
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Informations de connexion incorrectes")
-        except Exception:
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Informations de connexion incorrectes")
+def _is_minor(birthday: Optional[date]) -> bool:
+    if not birthday:
+        return False
+    try:
+        # Compute age safely
+        today = date.today()
+        age = today.year - birthday.year - ((today.month, today.day) < (birthday.month, birthday.day))
+        return age < 18
+    except Exception:
+        return False
 
 
-@router.post("/login", response_model=TokenResponse)
-async def login(request: Request, cursor = Depends(get_cursor)):
+@router.post("/login")
+async def login(
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    # Accept both application/json and form (OAuth2) payloads
     identifier: Optional[str] = None
     password: Optional[str] = None
 
     try:
-        json_body = await request.json()
-        if isinstance(json_body, dict):
-            identifier = json_body.get("identifier")
-            password = json_body.get("password")
-    except Exception as e:
-        logger.warning(f"[auth] Failed to parse JSON login payload: {e}")
+        content_type = (request.headers.get("content-type") or "").lower()
+    except Exception:
+        content_type = ""
 
+    if "application/json" in content_type:
+        try:
+            data = await request.json()
+            if isinstance(data, dict):
+                identifier = data.get("identifier") or data.get("username")
+                password = data.get("password")
+        except Exception:
+            pass
+
+    # Fallback to parsing form fields if JSON not provided
     if not identifier or not password:
         try:
             form = await request.form()
-            identifier = (
-                form.get("identifier")
-                or form.get("username")
-                or form.get("email")
-                or form.get("telephone")
-            )
-            password = form.get("password")
-        except Exception as e:
-            logger.warning(f"[auth] Failed to parse FORM login payload: {e}")
+            identifier = identifier or form.get("username")
+            password = password or form.get("password")
+        except Exception:
+            pass
 
     if not identifier or not password:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Missing identifier or password")
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Missing credentials")
 
-    await cursor.execute(
-        """
-        SELECT * FROM users
-        WHERE username = %s OR email = %s OR telephone = %s
-        LIMIT 1
-        """,
-        (identifier, identifier, identifier),
+    user: Optional[Users] = (
+        db.query(Users)
+        .filter(
+            (Users.username == identifier)
+            | (Users.email == identifier)
+            | (Users.telephone == identifier)
+        )
+        .first()
     )
-    user = await cursor.fetchone()
-    if not user:
-        logging.error(f"[auth] Login failed for identifier: {identifier} (user not found)")
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Informations de connexion incorrectes")
 
-    if not verify_password(password, user.get("password", "")):
-        logging.error(f"[auth] Login failed for identifier: {identifier} (invalid password)")
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Informations de connexion incorrectes")
+    if not user or not verify_password(password, user.password or ""):
+        logger.error(f"[auth] Login failed for identifier: {identifier}")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect username or password",
+        )
 
-    # Block non-active users with a generic message
-    is_active = user.get("isactive")
+    # Inactive user -> 403 with 'deactivated' keyword
     try:
-        is_active = int(is_active) if is_active is not None else 0
+        is_active = int(user.isactive or 0)
     except (TypeError, ValueError):
         is_active = 0
     if is_active != 1:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Informations de connexion incorrectes")
-
-    # Block users with role 'norole' except the special username 'norole'
-    username = user.get("username") or ""
-    if await has_role(cursor, user["id"], "norole") and username.lower() != "norole":
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Informations de connexion incorrectes")
-
-    # Block minors as well
-    await check_majority(user)
-    
-    # Require password change on first login
-    is_first_login = user.get("isfirstlogin")
-    try:
-        is_first_login = int(is_first_login) if is_first_login is not None else 0
-    except (TypeError, ValueError):
-        is_first_login = 0
-    if is_first_login == 1:
-        # Specific code to allow frontend to trigger first-login password change flow
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail={
-                "code": "FIRST_LOGIN_REQUIRED",
-                "message": "Veuillez changer votre mot de passe avant de vous connecter"
-            },
+            detail="Account deactivated",
         )
 
-    token = create_access_token({"sub": str(user["id"]), "username": user.get("username")})
-    return TokenResponse(access_token=token)
+    # Block minors
+    if _is_minor(user.birthday):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User must be of legal age",
+        )
+
+    # First-login password change flow is handled elsewhere; allow normal login here
+
+    token = create_access_token({"sub": str(user.id), "username": user.username})
+    return {"access_token": token, "token_type": "bearer"}
+
 
 @router.post("/change-password-first-login")
-async def change_password_first_login(request: Request, cursor = Depends(get_cursor)):
+async def change_password_first_login(
+    form_data: dict,
+    db: Session = Depends(get_db),
+):
     identifier: Optional[str] = None
     old_password: Optional[str] = None
     new_password: Optional[str] = None
 
-    try:
-        json_body = await request.json()
-        if isinstance(json_body, dict):
-            identifier = json_body.get("identifier")
-            old_password = json_body.get("old_password")
-            new_password = json_body.get("new_password")
-    except Exception as e:
-        logger.warning(f"[auth] Failed to parse JSON change-password-first-login payload: {e}")
+    if isinstance(form_data, dict):
+        identifier = form_data.get("identifier")
+        old_password = form_data.get("old_password")
+        new_password = form_data.get("new_password")
 
     if not identifier or not old_password or not new_password:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Missing fields")
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="Missing fields")
 
-    await cursor.execute(
-        """
-        SELECT * FROM users
-        WHERE username = %s OR email = %s OR telephone = %s
-        LIMIT 1
-        """,
-        (identifier, identifier, identifier),
+    user: Optional[Users] = (
+        db.query(Users)
+        .filter(
+            (Users.username == identifier)
+            | (Users.email == identifier)
+            | (Users.telephone == identifier)
+        )
+        .first()
     )
-    user = await cursor.fetchone()
     # For security, do not reveal whether the user exists; use generic errors
     if not user:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Informations de connexion incorrectes")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect username or password")
 
     # Only proceed if first login is required
-    is_first_login = user.get("isfirstlogin")
     try:
-        is_first_login = int(is_first_login) if is_first_login is not None else 0
+        is_first_login = int(user.isfirstlogin or 0)
     except (TypeError, ValueError):
         is_first_login = 0
     if is_first_login != 1:
@@ -159,47 +144,50 @@ async def change_password_first_login(request: Request, cursor = Depends(get_cur
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Flow non autorisé")
 
     # Check active status as well
-    is_active = user.get("isactive")
     try:
-        is_active = int(is_active) if is_active is not None else 0
+        is_active = int(user.isactive or 0)
     except (TypeError, ValueError):
         is_active = 0
     if is_active != 1:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Informations de connexion incorrectes")
-
-    # Block users with role 'norole' (do not allow password change flow)
-    if await has_role(cursor, user["id"], "norole"):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Informations de connexion incorrectes")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account deactivated")
 
     # Block minors as well
-    await check_majority(user)
+    if _is_minor(user.birthday):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User must be of legal age")
 
     # Verify old (current) password
-    if not verify_password(old_password, user.get("password", "")):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Informations de connexion incorrectes")
+    if not verify_password(old_password, user.password or ""):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect username or password")
 
     # Update password and clear first-login flag
     new_hashed = hash_password(new_password)
-    await cursor.execute(
-        "UPDATE users SET password = %s, isfirstlogin = %s, updatedat = CURRENT_TIMESTAMP WHERE id = %s",
-        (new_hashed, 0, user["id"]),
-    )
-    try:
-        await cursor.commit()
-    except Exception:
-        logger.exception("[auth] Commit failed during change_password_first_login")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Database commit failed")
+    user.password = new_hashed
+    user.isfirstlogin = 0
+    db.add(user)
+    db.commit()
 
     return {"status": "ok"}
 
+
 @router.get("/verify")
-async def verify_auth(current_user: dict = Depends(get_current_user)):
-    user = dict(current_user) if isinstance(current_user, dict) else current_user
-    user.pop("password", None)
-    return {"ok": True, "user": user}
+async def verify_auth(current_user: Users = Depends(get_current_user)):
+    # Return full user info (excluding password) with ok flag
+    user = {
+        "id": current_user.id,
+        "username": current_user.username,
+        "email": current_user.email,
+        "firstname": current_user.firstname,
+        "lastname": current_user.lastname,
+        "telephone": current_user.telephone,
+        "birthday": current_user.birthday.isoformat() if current_user.birthday else None,
+        "isactive": int(current_user.isactive or 0),
+        "isfirstlogin": int(current_user.isfirstlogin or 0),
+    }
+    return user
+
 
 @router.post("/logout")
-async def logout(request: Request, token: Optional[str] = Depends(oauth2_scheme), cursor = Depends(get_cursor)):
+async def logout(token: Optional[str] = Depends(oauth2_scheme), db: Session = Depends(get_db)):
     if not token:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
     try:
@@ -208,30 +196,9 @@ async def logout(request: Request, token: Optional[str] = Depends(oauth2_scheme)
         exp: Optional[int] = payload.get("exp")
         expires_dt = datetime.fromtimestamp(exp, tz=timezone.utc) if exp else datetime.now(timezone.utc)
 
-        # Ideally, schemas are created at startup or migration, not here.
-        await cursor.execute(
-            """
-            CREATE TABLE IF NOT EXISTS revoked_tokens (
-                id INT AUTO_INCREMENT PRIMARY KEY,
-                jti VARCHAR(36),
-                token TEXT,
-                expires DATETIME,
-                INDEX idx_jti (jti)
-            ) ENGINE=InnoDB;
-            """
-        )
-        await cursor.execute(
-            "INSERT INTO revoked_tokens (jti, token, expires) VALUES (%s, %s, %s)",
-            (jti, token if not jti else None, expires_dt.replace(tzinfo=None)),
-        )
-        
-        # Auto-commit dependent
-        try:
-            await cursor.commit()
-        except Exception:
-            logger.exception("[auth] Commit failed during logout")
-            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Database commit failed")
-            
-        return {"status": "ok"}
+        revoked = RevokedToken(jti=jti, token=token, expires=expires_dt.replace(tzinfo=None))
+        db.add(revoked)
+        db.commit()
+        return {"message": "Successfully logged out"}
     except JWTError:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")

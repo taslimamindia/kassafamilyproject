@@ -13,11 +13,16 @@ from pydantic import BaseModel, field_validator
 from typing import Optional, List
 from datetime import datetime
 import logging
-from dependencies import get_cursor, get_current_user, has_role, get_user_roles
+from sqlalchemy.orm import Session
+from sqlalchemy import text, func, exists
+from models_orm.dependencies import get_db, get_current_user, get_user_roles
+from models_orm.users import Users, FamilyAssignation
+from models_orm.finance import PaymentMethods, Transactions, TransactionApprovals
+from models_orm.access_control import Roles, RoleAttribution
 from settings import settings
 from aws_file import AwsFile
 import uuid
-from .messages import send_notification
+from routers.messages import send_notification
 
 
 router = APIRouter()
@@ -178,20 +183,14 @@ class TransactionUpdate(BaseModel):
 # -----------------------------
 
 
-async def notify_transactions_validated(cursor, tx_ids: List[int]):
+async def notify_transactions_validated(db: Session, tx_ids: List[int]):
     if not tx_ids:
         return
-
-    placeholders = ",".join(["%s"] * len(tx_ids))
-
-    # Fetch details: id, users_id, recorded_by_id
-    query = f"""
-        SELECT t.id, t.users_id, t.recorded_by_id
-        FROM transactions t
-        WHERE t.id IN ({placeholders})
-    """
-    await cursor.execute(query, tuple(tx_ids))
-    rows = await cursor.fetchall()
+    rows = (
+        db.query(Transactions.id, Transactions.users_id, Transactions.recorded_by_id)
+        .filter(Transactions.id.in_(tx_ids))
+        .all()
+    )
 
     # Map user_id -> { as_owner: count, as_creator: count }
     # optimizing to just counts to avoid huge messages list, generic message is better for bulk
@@ -199,8 +198,8 @@ async def notify_transactions_validated(cursor, tx_ids: List[int]):
 
     for r in rows:
         tid = r["id"] if isinstance(r, dict) else r[0]
-        uid = r["users_id"] if isinstance(r, dict) else r[2]
-        rid = r["recorded_by_id"] if isinstance(r, dict) else r[3]
+        uid = r["users_id"] if isinstance(r, dict) else r[1]
+        rid = r["recorded_by_id"] if isinstance(r, dict) else r[2]
 
         # Check eligibility for owner
         if uid not in notifications:
@@ -217,21 +216,18 @@ async def notify_transactions_validated(cursor, tx_ids: List[int]):
     if not all_user_ids:
         return
 
-    placeholders_u = ",".join(["%s"] * len(all_user_ids))
-
-    # Check isactive=1 and role='member'
-    check_sql = f"""
-        SELECT DISTINCT u.id
-        FROM users u
-        JOIN role_attribution ra ON ra.users_id = u.id
-        JOIN roles r ON r.id = ra.roles_id
-        WHERE u.id IN ({placeholders_u})
-        AND u.isactive = 1
-        AND r.role = 'member'
-    """
-    await cursor.execute(check_sql, tuple(all_user_ids))
-    valid_rows = await cursor.fetchall()
-    valid_ids = set(r["id"] if isinstance(r, dict) else r[0] for r in valid_rows)
+    # Check isactive=1 and role='member' via ORM
+    valid_rows = (
+        db.query(Users.id)
+        .join(RoleAttribution, RoleAttribution.users_id == Users.id)
+        .join(Roles, Roles.id == RoleAttribution.roles_id)
+        .filter(Users.id.in_(all_user_ids))
+        .filter(Users.isactive == 1)
+        .filter(Roles.role == "member")
+        .distinct()
+        .all()
+    )
+    valid_ids = set(int(r[0]) for r in valid_rows)
 
     # Send messages
     for uid, data in notifications.items():
@@ -253,11 +249,10 @@ async def notify_transactions_validated(cursor, tx_ids: List[int]):
 
         if parts:
             msg = " ".join(parts)
-            # Use sender_id=None (System) or maybe the treasurer who triggered it?
-            # But in bulk there might be multiple approvers over time, this is the final validation event.
-            # We'll use None or 1.
+            # Resolve the 'system' user id from DB to use as sender (avoids FK issues)
             await send_notification(
-                cursor=cursor,
+                db=db,
+                sender_id=None,  # Will be resolved to 'system' user in send_notification
                 recipient_ids=[uid],
                 message_text=msg,
                 message_type="APPROVAL",
@@ -265,32 +260,41 @@ async def notify_transactions_validated(cursor, tx_ids: List[int]):
             )
 
 
-async def notify_treasurers_new_transaction(cursor, sender_id: int, count: int = 1):
+async def notify_treasurers_new_transaction(
+    db: Session, sender_id: int, count: int = 1
+):
     """
     Sends a notification to all users with 'treasury' role
     that a new transaction is pending validation.
     """
     # Fetch sender details
-    await cursor.execute(
-        "SELECT firstname, lastname FROM users WHERE id = %s", (sender_id,)
+    sender = (
+        db.query(Users.firstname, Users.lastname)
+        .filter(Users.id == int(sender_id))
+        .first()
     )
-    sender = await cursor.fetchone()
     sender_name = "Utilisateur Inconnu"
     if sender:
-        fn = sender.get("firstname") or ""
-        ln = sender.get("lastname") or ""
-        sender_name = f"{fn} {ln}".strip() or sender_name
+        # SQLAlchemy row supports attribute access; fall back defensively
+        fn = getattr(sender, "firstname", None)
+        ln = getattr(sender, "lastname", None)
+        if fn is None or ln is None:
+            try:
+                fn = sender[0]
+                ln = sender[1]
+            except Exception:
+                fn = fn or ""
+                ln = ln or ""
+        sender_name = f"{(fn or '')} {(ln or '')}".strip() or sender_name
 
-    await cursor.execute(
-        """
-        SELECT DISTINCT ra.users_id 
-        FROM role_attribution ra
-        JOIN roles r ON r.id = ra.roles_id
-        WHERE r.role = 'treasury'
-    """
+    rows = (
+        db.query(RoleAttribution.users_id)
+        .join(Roles, Roles.id == RoleAttribution.roles_id)
+        .filter(Roles.role == "treasury")
+        .distinct()
+        .all()
     )
-    rows = await cursor.fetchall()
-    treasurer_ids = [r["users_id"] if isinstance(r, dict) else r[0] for r in rows]
+    treasurer_ids = [int(r[0]) for r in rows]
 
     if not treasurer_ids:
         return
@@ -298,7 +302,7 @@ async def notify_treasurers_new_transaction(cursor, sender_id: int, count: int =
     msg_text = f"{sender_name} vous a soumis {'une transaction' if count == 1 else f'{count} transactions'} à valider"
 
     await send_notification(
-        cursor=cursor,
+        db=db,
         recipient_ids=treasurer_ids,
         message_text=msg_text,
         sender_id=sender_id,
@@ -315,127 +319,129 @@ async def notify_treasurers_new_transaction(cursor, sender_id: int, count: int =
 @router.get("/payment-methods")
 async def list_payment_methods(
     active: Optional[bool] = Query(None, description="Filter active methods"),
-    cursor=Depends(get_cursor),
-    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    current_user: Users = Depends(get_current_user),
 ):
-    """List payment methods. Optionally filter by active state."""
-    where = []
-    vals: List[object] = []
-    if active is not None:
-        where.append("isactive = %s")
-        vals.append(1 if active else 0)
-    # Restrict to allowed names only
-    name_placeholders = ", ".join(["%s"] * len(ALLOWED_PAYMENT_METHODS))
-    where.append(f"name IN ({name_placeholders})")
-    vals.extend(ALLOWED_PAYMENT_METHODS)
-    clause = ("WHERE " + " AND ".join(where)) if where else ""
-    await cursor.execute(
-        f"SELECT id, name, type_of_proof, isactive, created_at, updated_at, account_number FROM payment_methods {clause} ORDER BY name",
-        tuple(vals),
+    """List payment methods. Optionally filter by active state (ORM)."""
+    q = db.query(PaymentMethods).filter(
+        PaymentMethods.name.in_(ALLOWED_PAYMENT_METHODS)
     )
-    return await cursor.fetchall()
+    if active is not None:
+        q = q.filter(PaymentMethods.isactive == (1 if active else 0))
+    rows = q.order_by(PaymentMethods.name).all()
+    return [
+        {
+            "id": r.id,
+            "name": r.name,
+            "type_of_proof": r.type_of_proof,
+            "isactive": int(1 if r.isactive else 0),
+            "created_at": r.created_at,
+            "updated_at": r.updated_at,
+            "account_number": r.account_number,
+        }
+        for r in rows
+    ]
 
 
 @router.post("/payment-methods")
 async def create_payment_method(
     body: PaymentMethodCreate,
-    cursor=Depends(get_cursor),
-    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    current_user: Users = Depends(get_current_user),
 ):
-    """Create a new payment method. Admin-only."""
-    if not await has_role(cursor, current_user["id"], "admin"):
+    """
+    Create a new payment method. Admin-only (ORM).
+    """
+
+    roles = await get_user_roles(db, current_user.id)
+    if "admin" not in roles:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
 
     # Enforce unique name and allowed set at application level
-    await cursor.execute("SELECT id FROM payment_methods WHERE name = %s", (body.name,))
-    if await cursor.fetchone():
+    exists = db.query(PaymentMethods).filter(PaymentMethods.name == body.name).first()
+    if exists:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Payment method name already exists",
         )
 
-    now = datetime.now()
-    await cursor.execute(
-        """
-		INSERT INTO payment_methods (name, type_of_proof, isactive, created_at, updated_at, account_number)
-		VALUES (%s, %s, %s, %s, %s, %s)
-		""",
-        (
-            body.name,
-            body.type_of_proof,
-            body.isactive if body.isactive is not None else 1,
-            now,
-            now,
-            body.account_number,
-        ),
+    pm = PaymentMethods(
+        name=body.name,
+        type_of_proof=body.type_of_proof,
+        isactive=bool(body.isactive if body.isactive is not None else 1),
+        account_number=(body.account_number or ""),
     )
+    db.add(pm)
     try:
-        await cursor.commit()
+        db.commit()
+        db.refresh(pm)
     except Exception:
         logger.exception("[transactions] Commit failed during create_payment_method")
         raise HTTPException(status_code=500, detail="Database commit failed")
 
-    new_id = cursor.lastrowid
-    await cursor.execute("SELECT * FROM payment_methods WHERE id = %s", (new_id,))
-    return await cursor.fetchone()
+    return {
+        "id": pm.id,
+        "name": pm.name,
+        "type_of_proof": pm.type_of_proof,
+        "isactive": int(1 if pm.isactive else 0),
+        "created_at": pm.created_at,
+        "updated_at": pm.updated_at,
+        "account_number": pm.account_number,
+    }
 
 
 @router.patch("/payment-methods/{pm_id}")
 async def update_payment_method(
     pm_id: int,
     body: PaymentMethodUpdate,
-    cursor=Depends(get_cursor),
-    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    current_user: Users = Depends(get_current_user),
 ):
-    """Update a payment method. Admin-only."""
-    if not await has_role(cursor, current_user["id"], "admin"):
+    """Update a payment method. Admin-only (ORM)."""
+    roles = await get_user_roles(db, current_user.id)
+    if "admin" not in roles:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
 
-    # Exists?
-    await cursor.execute("SELECT * FROM payment_methods WHERE id = %s", (pm_id,))
-    if not await cursor.fetchone():
+    pm = db.query(PaymentMethods).filter(PaymentMethods.id == pm_id).first()
+    if not pm:
         raise HTTPException(status_code=404, detail="Payment method not found")
 
-    fields = []
-    vals: List[object] = []
     if body.name is not None:
-        # Check uniqueness
-        await cursor.execute(
-            "SELECT id FROM payment_methods WHERE name = %s AND id != %s",
-            (body.name, pm_id),
+        exists = (
+            db.query(PaymentMethods)
+            .filter(PaymentMethods.name == body.name)
+            .filter(PaymentMethods.id != pm_id)
+            .first()
         )
-        if await cursor.fetchone():
+        if exists:
             raise HTTPException(
                 status_code=409, detail="Payment method name already exists"
             )
-        fields.append("name = %s")
-        vals.append(body.name)
+        pm.name = body.name
     if body.isactive is not None:
-        fields.append("isactive = %s")
-        vals.append(body.isactive)
+        pm.isactive = bool(body.isactive)
     if body.type_of_proof is not None:
-        fields.append("type_of_proof = %s")
-        vals.append(body.type_of_proof)
+        pm.type_of_proof = body.type_of_proof
     if body.account_number is not None:
-        fields.append("account_number = %s")
-        vals.append(body.account_number)
-    fields.append("updated_at = %s")
-    vals.append(datetime.now())
+        pm.account_number = body.account_number
+    pm.updated_at = datetime.now()
 
-    if not fields:
-        await cursor.execute("SELECT * FROM payment_methods WHERE id = %s", (pm_id,))
-        return await cursor.fetchone()
-
-    sql = f"UPDATE payment_methods SET {', '.join(fields)} WHERE id = %s"
-    vals.append(pm_id)
-    await cursor.execute(sql, tuple(vals))
     try:
-        await cursor.commit()
+        db.commit()
+        db.refresh(pm)
     except Exception:
         logger.exception("[transactions] Commit failed during update_payment_method")
         raise HTTPException(status_code=500, detail="Database commit failed")
-    await cursor.execute("SELECT * FROM payment_methods WHERE id = %s", (pm_id,))
-    return await cursor.fetchone()
+
+    return {
+        "id": pm.id,
+        "name": pm.name,
+        "type_of_proof": pm.type_of_proof,
+        "isactive": int(1 if pm.isactive else 0),
+        "created_at": pm.created_at,
+        "updated_at": pm.updated_at,
+        "account_number": pm.account_number,
+    }
 
 
 # -----------------------------
@@ -446,40 +452,41 @@ async def update_payment_method(
 @router.get("/transactions")
 async def list_transactions(
     request: Request,
-    cursor=Depends(get_cursor),
-    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    current_user: Users = Depends(get_current_user),
 ):
     """List transactions with optional filters via query params."""
     qp = request.query_params
     where: List[str] = []
-    vals: List[object] = []
+    params: dict = {}
 
     status_q = (qp.get("status") or "").strip().upper()
     if status_q in {"PENDING", "PARTIALLY_APPROVED", "VALIDATED", "REJECTED", "SAVED"}:
-        where.append("t.status = %s")
-        vals.append(status_q)
+        where.append("t.status = :p_status")
+        params["p_status"] = status_q
 
     for key in ("users_id", "recorded_by_id", "payment_methods_id"):
         if qp.get(key):
-            where.append(f"t.{key} = %s")
-            vals.append(int(qp.get(key)))
+            pname = f"p_{key}"
+            where.append(f"t.{key} = :{pname}")
+            params[pname] = int(qp.get(key))
 
     ttype = (qp.get("transaction_type") or "").strip().upper()
     if ttype in {"CONTRIBUTION", "DONATIONS", "EXPENSE"}:
-        where.append("t.transaction_type = %s")
-        vals.append(ttype)
+        where.append("t.transaction_type = :p_ttype")
+        params["p_ttype"] = ttype
 
     date_from = qp.get("date_from")
     date_to = qp.get("date_to")
     if date_from:
-        where.append("t.created_at >= %s")
-        vals.append(date_from)
+        where.append("t.created_at >= :p_from")
+        params["p_from"] = date_from
     if date_to:
-        where.append("t.created_at <= %s")
-        vals.append(date_to)
+        where.append("t.created_at <= :p_to")
+        params["p_to"] = date_to
 
     # Role-based access
-    roles = await get_user_roles(cursor, current_user["id"]) or []
+    roles = await get_user_roles(db, current_user.id) or []
     lowered = [r.lower() for r in roles]
     is_admin = "admin" in lowered
     is_treasury = "treasury" in lowered
@@ -488,46 +495,124 @@ async def list_transactions(
         if is_group_admin:
             # Group admin: own + assigned + all VALIDATED
             where.append(
-                "(t.users_id = %s OR t.users_id IN (SELECT users_assigned_id FROM family_assignation WHERE users_responsable_id = %s) OR t.status = 'VALIDATED')"
+                "(t.users_id = :p_me OR t.users_id IN (SELECT users_assigned_id FROM family_assignation WHERE users_responsable_id = :p_me) OR t.status = 'VALIDATED')"
             )
-            vals.extend([current_user["id"], current_user["id"]])
+            params["p_me"] = current_user.id
         else:
             # Regular members: own + all VALIDATED
-            where.append("(t.users_id = %s OR t.status = 'VALIDATED')")
-            vals.append(current_user["id"])
+            where.append("(t.users_id = :p_me OR t.status = 'VALIDATED')")
+            params["p_me"] = current_user.id
 
-    clause = ("WHERE " + " AND ".join(where)) if where else ""
-    sql = f"""
-        SELECT t.*, 
-            u.username AS user_username, u.firstname AS user_firstname, u.lastname AS user_lastname, u.image_url AS user_image_url,
-            rb.username AS recorded_by_username, rb.firstname AS recorded_by_firstname, rb.lastname AS recorded_by_lastname,
-            pm.name AS payment_method_name, pm.type_of_proof AS payment_method_type_of_proof, pm.account_number AS payment_method_account_number
-        FROM transactions t
-        JOIN users u ON u.id = t.users_id
-        JOIN users rb ON rb.id = t.recorded_by_id
-        JOIN payment_methods pm ON pm.id = t.payment_methods_id
-        {clause}
-        ORDER BY t.created_at DESC
-    """
-    await cursor.execute(sql, tuple(vals))
-    transactions = await cursor.fetchall()
+    # Build ORM query for transactions
+    q = (
+        db.query(Transactions)
+        .join(Users, Users.id == Transactions.users_id)
+        .join(PaymentMethods, PaymentMethods.id == Transactions.payment_methods_id)
+    )
+    # Apply filters from params
+    if "p_status" in params:
+        q = q.filter(Transactions.status == params["p_status"])
+    for key in ("users_id", "recorded_by_id", "payment_methods_id"):
+        pname = f"p_{key}"
+        if pname in params:
+            q = q.filter(getattr(Transactions, key) == params[pname])
+    if "p_ttype" in params:
+        q = q.filter(Transactions.transaction_type == params["p_ttype"])
+    if "p_from" in params:
+        q = q.filter(Transactions.created_at >= params["p_from"])
+    if "p_to" in params:
+        q = q.filter(Transactions.created_at <= params["p_to"])
+
+    # Role-based access already handled via where clauses above; replicate logic
+    if not (is_admin or is_treasury):
+        if is_group_admin:
+            q = q.filter(
+                (Transactions.users_id == current_user.id)
+                | (
+                    db.query(FamilyAssignation)
+                    .filter(FamilyAssignation.users_responsable_id == current_user.id)
+                    .filter(
+                        FamilyAssignation.users_assigned_id == Transactions.users_id
+                    )
+                    .exists()
+                )
+                | (Transactions.status == "VALIDATED")
+            )
+        else:
+            q = q.filter(
+                (Transactions.users_id == current_user.id)
+                | (Transactions.status == "VALIDATED")
+            )
+
+    rows = q.order_by(Transactions.created_at.desc()).all()
+    transactions = []
+    for t in rows:
+        pm = t.payment_method
+        u = t.user
+        rb = t.recorded_by
+        item = {
+            "id": t.id,
+            "amount": t.amount,
+            "status": t.status,
+            "proof_reference": t.proof_reference,
+            "validated_at": t.validated_at,
+            "created_at": t.created_at,
+            "updated_at": t.updated_at,
+            "issubmitted": int(1 if t.issubmitted else 0),
+            "recorded_by_id": t.recorded_by_id,
+            "users_id": t.users_id,
+            "updated_by": t.updated_by,
+            "payment_methods_id": t.payment_methods_id,
+            "transaction_type": t.transaction_type,
+            "user_username": getattr(u, "username", None),
+            "user_firstname": getattr(u, "firstname", None),
+            "user_lastname": getattr(u, "lastname", None),
+            "user_image_url": getattr(u, "image_url", None),
+            "recorded_by_username": getattr(rb, "username", None),
+            "recorded_by_firstname": getattr(rb, "firstname", None),
+            "recorded_by_lastname": getattr(rb, "lastname", None),
+            "payment_method_name": getattr(pm, "name", None),
+            "payment_method_type_of_proof": getattr(pm, "type_of_proof", None),
+            "payment_method_account_number": getattr(pm, "account_number", None),
+        }
+        # Add account_number conditionally
+        pm_name = (item["payment_method_name"] or "").lower()
+        if pm_name in ["orange money", "virement bancaire"]:
+            item["account_number"] = item.get("payment_method_account_number")
+        else:
+            item["account_number"] = None
+        transactions.append(item)
 
     if transactions:
-        # Fetch approvals for these transactions
+        # Fetch approvals for these transactions via ORM
         tx_ids = [t["id"] for t in transactions]
-        # Depending on list size, IN clause might optionally need chunking, but for now assuming reasonable page size
-        format_strings = ",".join(["%s"] * len(tx_ids))
-        await cursor.execute(
-            f"""
-            SELECT ta.*, u.username as approved_by_username, u.firstname as approved_by_firstname, u.lastname as approved_by_lastname
-            FROM transaction_approvals ta
-            JOIN users u ON u.id = ta.users_id
-            WHERE ta.transactions_id IN ({format_strings})
-            ORDER BY ta.approved_at ASC
-            """,
-            tuple(tx_ids),
+        rows_app = (
+            db.query(
+                TransactionApprovals,
+                Users.username.label("approved_by_username"),
+                Users.firstname.label("approved_by_firstname"),
+                Users.lastname.label("approved_by_lastname"),
+            )
+            .join(Users, Users.id == TransactionApprovals.users_id)
+            .filter(TransactionApprovals.transactions_id.in_(tx_ids))
+            .order_by(TransactionApprovals.approved_at.asc())
+            .all()
         )
-        all_approvals = await cursor.fetchall()
+        all_approvals = []
+        for ta, u_username, u_firstname, u_lastname in rows_app:
+            all_approvals.append(
+                {
+                    "id": ta.id,
+                    "role_at_approval": ta.role_at_approval,
+                    "approved_at": ta.approved_at,
+                    "note": ta.note,
+                    "transactions_id": ta.transactions_id,
+                    "users_id": ta.users_id,
+                    "approved_by_username": u_username,
+                    "approved_by_firstname": u_firstname,
+                    "approved_by_lastname": u_lastname,
+                }
+            )
 
         # Map approvals to transactions
         approval_map = {}
@@ -552,29 +637,30 @@ async def list_transactions(
 @router.post("/transactions")
 async def create_transaction(
     body: TransactionCreate,
-    cursor=Depends(get_cursor),
-    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    current_user: Users = Depends(get_current_user),
 ):
-    """Create a transaction. Restricted to admin and group admin. Additional rule: only 'board' or 'treasury' can create EXPENSE."""
+    """Create a transaction using ORM. Restricted to admin/group admin/member; EXPENSE only by board/treasury."""
+    roles = await get_user_roles(db, current_user.id)
+    lowered = set(roles)
     if not (
-        await has_role(cursor, current_user["id"], "member")
-        or await has_role(cursor, current_user["id"], "admin")
-        or await has_role(cursor, current_user["id"], "admingroup")
-        or await has_role(cursor, current_user["id"], "treasury")
-        or await has_role(cursor, current_user["id"], "board")
+        "member" in lowered
+        or "admin" in lowered
+        or "admingroup" in lowered
+        or "treasury" in lowered
+        or "board" in lowered
     ):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
 
     # Validate foreign keys
-    await cursor.execute("SELECT id FROM users WHERE id = %s", (body.users_id,))
-    if not await cursor.fetchone():
+    if not db.query(Users).filter(Users.id == body.users_id).first():
         raise HTTPException(status_code=404, detail="User not found")
-    await cursor.execute(
-        "SELECT id FROM payment_methods WHERE id = %s AND isactive = 1",
-        (body.payment_methods_id,),
+    pm = (
+        db.query(PaymentMethods)
+        .filter(PaymentMethods.id == body.payment_methods_id)
+        .first()
     )
-    pm_row = await cursor.fetchone()
-    if not pm_row:
+    if not pm or not bool(pm.isactive):
         raise HTTPException(
             status_code=400, detail="Invalid or inactive payment method"
         )
@@ -587,10 +673,7 @@ async def create_transaction(
 
     # Expense creation only allowed to 'board' or 'treasury'
     if body.transaction_type.upper() == "EXPENSE":
-        if not (
-            await has_role(cursor, current_user["id"], "board")
-            or await has_role(cursor, current_user["id"], "treasury")
-        ):
+        if not ("board" in lowered or "treasury" in lowered):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Only board or treasury can create EXPENSE transactions",
@@ -598,23 +681,25 @@ async def create_transaction(
 
     # Additional rule: if creating for another user, must be treasury or admingroup
     # A simple member can only create a transaction for themselves
-    if int(body.users_id) != int(current_user["id"]):
-        is_treasury = await has_role(cursor, current_user["id"], "treasury")
+    if int(body.users_id) != int(current_user.id):
+        is_treasury = "treasury" in lowered
         if is_treasury:
             pass
         else:
-            is_group_admin = await has_role(cursor, current_user["id"], "admingroup")
+            is_group_admin = "admingroup" in lowered
             if not is_group_admin:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Only treasury or admingroup can create transactions for another user",
                 )
             # For admingroup, target user must be assigned to them
-            await cursor.execute(
-                "SELECT 1 FROM family_assignation WHERE users_responsable_id = %s AND users_assigned_id = %s",
-                (current_user["id"], body.users_id),
+            row = (
+                db.query(FamilyAssignation)
+                .filter(FamilyAssignation.users_responsable_id == current_user.id)
+                .filter(FamilyAssignation.users_assigned_id == body.users_id)
+                .first()
             )
-            if not await cursor.fetchone():
+            if not row:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Not assigned to this group admin",
@@ -630,75 +715,87 @@ async def create_transaction(
         body.proof_reference,
         now,  # validated_at initial
         now,  # created_at
-        current_user["id"],  # recorded_by_id
+        current_user.id,  # recorded_by_id
         body.users_id,
-        current_user["id"],  # updated_by
+        current_user.id,  # updated_by
         body.payment_methods_id,
         body.transaction_type,
         now,  # updated_at
         body.issubmitted or 0,
     )
 
-    await cursor.execute(
-        """
-        INSERT INTO transactions (
-            amount, status, proof_reference, validated_at, created_at,
-            recorded_by_id, users_id, updated_by, payment_methods_id,
-            transaction_type, updated_at, issubmitted
-        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-        """,
-        params,
+    tx = Transactions(
+        amount=body.amount,
+        status=default_status,
+        proof_reference=body.proof_reference,
+        validated_at=now,
+        created_at=now,
+        recorded_by_id=current_user.id,
+        users_id=body.users_id,
+        updated_by=current_user.id,
+        payment_methods_id=body.payment_methods_id,
+        transaction_type=body.transaction_type,
+        updated_at=now,
+        issubmitted=bool(body.issubmitted or 0),
     )
-
-    # Get the new transaction id immediately after insert
-    new_id = cursor.lastrowid
+    db.add(tx)
 
     if (body.issubmitted or 0) == 1:
-        await notify_treasurers_new_transaction(cursor, current_user["id"])
+        await notify_treasurers_new_transaction(db, current_user.id)
 
         # Auto-approval for treasury if creating a CONTRIBUTION/DONATIONS
-        user_roles = await get_user_roles(cursor, current_user["id"]) or []
+        user_roles = await get_user_roles(db, current_user.id) or []
         lowered_roles = [r.lower() for r in user_roles]
         if "treasury" in lowered_roles and body.transaction_type.upper() in (
             "CONTRIBUTION",
             "DONATIONS",
         ):
-            now = datetime.now()
+            now2 = datetime.now()
             # Insert approval
-            await cursor.execute(
-                """
-                INSERT INTO transaction_approvals (role_at_approval, approved_at, note, transactions_id, users_id)
-                VALUES (%s, %s, %s, %s, %s)
-                """,
-                (
-                    "treasury",
-                    now,
-                    "Auto-approval on creation",
-                    new_id,
-                    current_user["id"],
-                ),
+            db.add(
+                TransactionApprovals(
+                    role_at_approval="treasury",
+                    approved_at=now2,
+                    note="Auto-approval on creation",
+                    transactions_id=tx.id,
+                    users_id=current_user.id,
+                )
             )
             # Update status to PARTIALLY_APPROVED
-            await cursor.execute(
-                "UPDATE transactions SET status = 'PARTIALLY_APPROVED', updated_by = %s, updated_at = %s WHERE id = %s",
-                (current_user["id"], now, new_id),
-            )
+            tx.status = "PARTIALLY_APPROVED"
+            tx.updated_by = current_user.id
+            tx.updated_at = now2
 
         try:
-            await cursor.commit()
+            db.commit()
+            db.refresh(tx)
         except Exception:
             logger.exception("[transactions] Commit failed during create_transaction")
             raise HTTPException(status_code=500, detail="Database commit failed")
-        await cursor.execute("SELECT * FROM transactions WHERE id = %s", (new_id,))
-        return await cursor.fetchone()
+
+    return {
+        "id": tx.id,
+        "amount": tx.amount,
+        "status": tx.status,
+        "proof_reference": tx.proof_reference,
+        "validated_at": tx.validated_at,
+        "created_at": tx.created_at,
+        "recorded_by_id": tx.recorded_by_id,
+        "users_id": tx.users_id,
+        "updated_by": tx.updated_by,
+        "payment_methods_id": tx.payment_methods_id,
+        "transaction_type": tx.transaction_type,
+        "updated_at": tx.updated_at,
+        "issubmitted": int(1 if tx.issubmitted else 0),
+    }
 
 
 @router.post("/transactions/proof-upload")
 async def upload_transaction_proof(
     file: UploadFile = File(...),
     tx_id: Optional[int] = Form(None),
-    cursor=Depends(get_cursor),
-    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    current_user: Users = Depends(get_current_user),
 ):
     """Upload an image proof to S3 under the 'transactions' folder.
     The file will be named using the next id from `transactions`:
@@ -707,12 +804,14 @@ async def upload_transaction_proof(
     """
     # Require elevated role to upload proofs (same as creating transactions)
     # Note: Regular members need to upload proofs for their contributions too.
+    roles = await get_user_roles(db, current_user.id)
+    lowered = set(roles)
     if not (
-        await has_role(cursor, current_user["id"], "admin")
-        or await has_role(cursor, current_user["id"], "admingroup")
-        or await has_role(cursor, current_user["id"], "treasury")
-        or await has_role(cursor, current_user["id"], "board")
-        or await has_role(cursor, current_user["id"], "member")
+        "admin" in lowered
+        or "admingroup" in lowered
+        or "treasury" in lowered
+        or "board" in lowered
+        or "member" in lowered
     ):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
 
@@ -720,14 +819,8 @@ async def upload_transaction_proof(
         filename = f"transaction_{tx_id}"
     else:
         # Determine next id from transactions for deterministic file naming
-        await cursor.execute(
-            "SELECT IFNULL(MAX(id), 0) + 1 AS next_id FROM transactions"
-        )
-        row = await cursor.fetchone()
-        if isinstance(row, dict):
-            next_id = int(row.get("next_id") or 1)
-        else:
-            next_id = int(row[0] if row and len(row) > 0 else 1)
+        max_id = db.query(func.coalesce(func.max(Transactions.id), 0)).scalar() or 0
+        next_id = int(max_id) + 1
         filename = f"transaction_{next_id}"
 
     aws = AwsFile(settings)
@@ -742,15 +835,17 @@ async def upload_transaction_proof(
 @router.delete("/transactions/proof-delete")
 async def delete_transaction_proof(
     url: str = Query(..., description="S3 URL to delete"),
-    cursor=Depends(get_cursor),
-    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    current_user: Users = Depends(get_current_user),
 ):
     """Delete a proof image from S3."""
+    roles = await get_user_roles(db, current_user.id)
+    lowered = set(roles)
     if not (
-        await has_role(cursor, current_user["id"], "admin")
-        or await has_role(cursor, current_user["id"], "admingroup")
-        or await has_role(cursor, current_user["id"], "treasury")
-        or await has_role(cursor, current_user["id"], "board")
+        "admin" in lowered
+        or "admingroup" in lowered
+        or "treasury" in lowered
+        or "board" in lowered
     ):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
 
@@ -765,42 +860,58 @@ async def delete_transaction_proof(
 async def set_transaction_proof(
     tx_id: int,
     body: TransactionProofUpdate,
-    cursor=Depends(get_cursor),
-    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    current_user: Users = Depends(get_current_user),
 ):
     """Set the proof URL for a transaction. Requires elevated roles (same as upload)."""
+    roles = await get_user_roles(db, current_user.id)
+    lowered = set(roles)
     if not (
-        await has_role(cursor, current_user["id"], "admin")
-        or await has_role(cursor, current_user["id"], "admingroup")
-        or await has_role(cursor, current_user["id"], "treasury")
-        or await has_role(cursor, current_user["id"], "board")
+        "admin" in lowered
+        or "admingroup" in lowered
+        or "treasury" in lowered
+        or "board" in lowered
     ):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
 
-    await cursor.execute("SELECT id FROM transactions WHERE id = %s", (tx_id,))
-    if not await cursor.fetchone():
+    tx = db.query(Transactions).filter(Transactions.id == tx_id).first()
+    if not tx:
         raise HTTPException(status_code=404, detail="Transaction not found")
 
-    now = datetime.now()
-    await cursor.execute(
-        "UPDATE transactions SET proof_reference = %s, updated_by = %s, updated_at = %s WHERE id = %s",
-        (body.url, current_user["id"], now, tx_id),
-    )
+    tx.proof_reference = body.url
+    tx.updated_by = current_user.id
+    tx.updated_at = datetime.now()
+    
     try:
-        await cursor.commit()
+        db.commit()
+        db.refresh(tx)
     except Exception:
         logger.exception("[transactions] Commit failed during set_transaction_proof")
         raise HTTPException(status_code=500, detail="Database commit failed")
-    await cursor.execute("SELECT * FROM transactions WHERE id = %s", (tx_id,))
-    return await cursor.fetchone()
+    
+    return {
+        "id": tx.id,
+        "amount": tx.amount,
+        "status": tx.status,
+        "proof_reference": tx.proof_reference,
+        "validated_at": tx.validated_at,
+        "created_at": tx.created_at,
+        "recorded_by_id": tx.recorded_by_id,
+        "users_id": tx.users_id,
+        "updated_by": tx.updated_by,
+        "payment_methods_id": tx.payment_methods_id,
+        "transaction_type": tx.transaction_type,
+        "updated_at": tx.updated_at,
+        "issubmitted": int(1 if tx.issubmitted else 0),
+    }
 
 
 @router.patch("/transactions/{tx_id}")
 async def update_transaction(
     tx_id: int,
     body: TransactionUpdate,
-    cursor=Depends(get_cursor),
-    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    current_user: Users = Depends(get_current_user),
 ):
     """Update transaction core fields: amount, payment method, type, proof_reference.
     Permissions:
@@ -810,16 +921,15 @@ async def update_transaction(
     Member (users_id) cannot be changed via this endpoint.
     """
     # Fetch transaction
-    await cursor.execute("SELECT * FROM transactions WHERE id = %s", (tx_id,))
-    tx = await cursor.fetchone()
+    tx = db.query(Transactions).filter(Transactions.id == tx_id).first()
     if not tx:
         raise HTTPException(status_code=404, detail="Transaction not found")
 
     # Determine permissions
-    recorded_by_id = int(tx["recorded_by_id"]) if isinstance(tx, dict) else int(tx[5])
-    status_val = tx["status"] if isinstance(tx, dict) else tx[1]
-    is_me_recorder = recorded_by_id == int(current_user["id"])
-    user_roles = await get_user_roles(cursor, current_user["id"]) or []
+    recorded_by_id = int(tx.recorded_by_id)
+    status_val = tx.status
+    is_me_recorder = recorded_by_id == int(current_user.id)
+    user_roles = await get_user_roles(db, current_user.id) or []
     lowered = set(r.lower() for r in user_roles)
     is_treasury = "treasury" in lowered
 
@@ -838,25 +948,18 @@ async def update_transaction(
 
     if body.amount is not None:
         try:
-            amt = float(body.amount)
+            tx.amount = float(body.amount)
         except Exception:
             raise HTTPException(status_code=400, detail="Invalid amount")
-        fields.append("amount = %s")
-        vals.append(amt)
 
     if body.payment_methods_id is not None:
         pm_id = int(body.payment_methods_id)
-        await cursor.execute(
-            "SELECT id, isactive FROM payment_methods WHERE id = %s",
-            (pm_id,),
-        )
-        pm = await cursor.fetchone()
-        if not pm or (pm.get("isactive") if isinstance(pm, dict) else pm[1]) != 1:
+        pm = db.query(PaymentMethods).filter(PaymentMethods.id == pm_id).first()
+        if not pm or not bool(pm.isactive):
             raise HTTPException(
                 status_code=400, detail="Invalid or inactive payment method"
             )
-        fields.append("payment_methods_id = %s")
-        vals.append(pm_id)
+        tx.payment_methods_id = pm_id
 
     if body.transaction_type is not None:
         tt = body.transaction_type.strip().upper()
@@ -865,8 +968,7 @@ async def update_transaction(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Only board or treasury can set EXPENSE",
             )
-        fields.append("transaction_type = %s")
-        vals.append(tt)
+        tx.transaction_type = tt
 
     if body.proof_reference is not None:
         pr = (body.proof_reference or "").strip()
@@ -874,219 +976,296 @@ async def update_transaction(
             raise HTTPException(
                 status_code=400, detail="Proof reference cannot be empty"
             )
-        fields.append("proof_reference = %s")
-        vals.append(pr)
+        tx.proof_reference = pr
 
     # Always update metadata
-    fields.append("updated_by = %s")
-    vals.append(current_user["id"])
-    fields.append("updated_at = %s")
-    vals.append(datetime.now())
+    tx.updated_by = current_user.id
+    tx.updated_at = datetime.now()
 
-    if not [f for f in fields if not f.startswith("updated_")]:
-        # Nothing to update besides metadata
-        await cursor.execute("SELECT * FROM transactions WHERE id = %s", (tx_id,))
-        return await cursor.fetchone()
-
-    sql = f"UPDATE transactions SET {', '.join(fields)} WHERE id = %s"
-    vals.append(tx_id)
-    await cursor.execute(sql, tuple(vals))
     try:
-        await cursor.commit()
+        db.commit()
+        db.refresh(tx)
     except Exception:
         logger.exception("[transactions] Commit failed during update_transaction")
         raise HTTPException(status_code=500, detail="Database commit failed")
 
-    await cursor.execute("SELECT * FROM transactions WHERE id = %s", (tx_id,))
-    return await cursor.fetchone()
+    return {
+        "id": tx.id,
+        "amount": tx.amount,
+        "status": tx.status,
+        "proof_reference": tx.proof_reference,
+        "validated_at": tx.validated_at,
+        "created_at": tx.created_at,
+        "recorded_by_id": tx.recorded_by_id,
+        "users_id": tx.users_id,
+        "updated_by": tx.updated_by,
+        "payment_methods_id": tx.payment_methods_id,
+        "transaction_type": tx.transaction_type,
+        "updated_at": tx.updated_at,
+        "issubmitted": int(1 if tx.issubmitted else 0),
+    }
 
 
 @router.patch("/transactions/{tx_id}/status")
 async def update_transaction_status(
     tx_id: int,
     body: TransactionStatusUpdate,
-    cursor=Depends(get_cursor),
-    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    current_user: Users = Depends(get_current_user),
 ):
     """Update a transaction status. Restricted to treasury only."""
-    if not await has_role(cursor, current_user["id"], "treasury"):
+    roles = await get_user_roles(db, current_user.id)
+    if "treasury" not in roles:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
 
-    await cursor.execute("SELECT * FROM transactions WHERE id = %s", (tx_id,))
-    if not await cursor.fetchone():
+    tx = db.query(Transactions).filter(Transactions.id == tx_id).first()
+    if not tx:
         raise HTTPException(status_code=404, detail="Transaction not found")
 
-    fields = ["status = %s", "updated_by = %s", "updated_at = %s"]
-    vals: List[object] = [body.status, current_user["id"], datetime.now()]
+    now = datetime.now()
+    tx.status = body.status
+    tx.updated_by = current_user.id
+    tx.updated_at = now
     if body.status == "VALIDATED":
-        fields.append("validated_at = %s")
-        vals.append(datetime.now())
-
-    sql = f"UPDATE transactions SET {', '.join(fields)} WHERE id = %s"
-    vals.append(tx_id)
-    await cursor.execute(sql, tuple(vals))
+        tx.validated_at = now
 
     if body.status == "PENDING":
-        await notify_treasurers_new_transaction(cursor, current_user["id"])
+        await notify_treasurers_new_transaction(db, current_user.id)
+
+    if body.status == "VALIDATED":
+        try:
+            await notify_transactions_validated(db, [tx_id])
+        except Exception as e:
+            logger.warning(f"Failed to notify validation: {e}")
 
     try:
-        await cursor.commit()
+        db.commit()
+        db.refresh(tx)
     except Exception:
         logger.exception(
             "[transactions] Commit failed during update_transaction_status"
         )
         raise HTTPException(status_code=500, detail="Database commit failed")
 
-    if body.status == "VALIDATED":
-        try:
-            await notify_transactions_validated(cursor, [tx_id])
-        except Exception as e:
-            logger.warning(f"Failed to notify validation: {e}")
-
-    await cursor.execute("SELECT * FROM transactions WHERE id = %s", (tx_id,))
-    return await cursor.fetchone()
+    return {
+        "id": tx.id,
+        "amount": tx.amount,
+        "status": tx.status,
+        "proof_reference": tx.proof_reference,
+        "validated_at": tx.validated_at,
+        "created_at": tx.created_at,
+        "recorded_by_id": tx.recorded_by_id,
+        "users_id": tx.users_id,
+        "updated_by": tx.updated_by,
+        "payment_methods_id": tx.payment_methods_id,
+        "transaction_type": tx.transaction_type,
+        "updated_at": tx.updated_at,
+        "issubmitted": int(1 if tx.issubmitted else 0),
+    }
 
 
 @router.get("/transactions/{tx_id}")
 async def get_transaction_by_id(
     tx_id: int,
-    cursor=Depends(get_cursor),
-    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    current_user: Users = Depends(get_current_user),
 ):
     """Fetch a single transaction by id."""
-    await cursor.execute(
-        """
-		SELECT t.*, u.username AS user_username, rb.username AS recorded_by_username,
-			pm.name AS payment_method_name, u.firstname AS user_firstname, u.lastname AS user_lastname
-		FROM transactions t
-		JOIN users u ON u.id = t.users_id
-		JOIN users rb ON rb.id = t.recorded_by_id
-		JOIN payment_methods pm ON pm.id = t.payment_methods_id
-		WHERE t.id = %s
-		""",
-        (tx_id,),
-    )
-    tx = await cursor.fetchone()
+    tx = db.query(Transactions).filter(Transactions.id == tx_id).first()
     if not tx:
         raise HTTPException(status_code=404, detail="Transaction not found")
+    
     # Role-based access: admin/treasury any; admingroup only for assigned users (or self); members only self
-    roles = await get_user_roles(cursor, current_user["id"]) or []
+    roles = await get_user_roles(db, current_user.id) or []
     lowered = [r.lower() for r in roles]
     is_admin = "admin" in lowered
     is_treasury = "treasury" in lowered
     is_group_admin = "admingroup" in lowered
-    target_uid = int(tx.get("users_id"))
+    target_uid = int(tx.users_id)
     if is_admin or is_treasury:
-        return tx
+        return {
+            "id": tx.id,
+            "amount": tx.amount,
+            "status": tx.status,
+            "proof_reference": tx.proof_reference,
+            "validated_at": tx.validated_at,
+            "created_at": tx.created_at,
+            "recorded_by_id": tx.recorded_by_id,
+            "users_id": tx.users_id,
+            "updated_by": tx.updated_by,
+            "payment_methods_id": tx.payment_methods_id,
+            "transaction_type": tx.transaction_type,
+            "updated_at": tx.updated_at,
+            "issubmitted": int(1 if tx.issubmitted else 0),
+        }
+        
     if is_group_admin:
-        if target_uid == int(current_user["id"]):
-            return tx
-        await cursor.execute(
-            "SELECT 1 FROM family_assignation WHERE users_responsable_id = %s AND users_assigned_id = %s",
-            (current_user["id"], target_uid),
+        if target_uid == int(current_user.id):
+            return {
+                "id": tx.id,
+                "amount": tx.amount,
+                "status": tx.status,
+                "proof_reference": tx.proof_reference,
+                "validated_at": tx.validated_at,
+                "created_at": tx.created_at,
+                "recorded_by_id": tx.recorded_by_id,
+                "users_id": tx.users_id,
+                "updated_by": tx.updated_by,
+                "payment_methods_id": tx.payment_methods_id,
+                "transaction_type": tx.transaction_type,
+                "updated_at": tx.updated_at,
+                "issubmitted": int(1 if tx.issubmitted else 0),
+            }
+            
+        row = (
+            db.query(FamilyAssignation)
+            .filter(FamilyAssignation.users_responsable_id == current_user.id)
+            .filter(FamilyAssignation.users_assigned_id == target_uid)
+            .first()
         )
-        if not await cursor.fetchone():
+        
+        if not row:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden"
             )
-        return tx
+            
+        return {
+            "id": tx.id,
+            "amount": tx.amount,
+            "status": tx.status,
+            "proof_reference": tx.proof_reference,
+            "validated_at": tx.validated_at,
+            "created_at": tx.created_at,
+            "recorded_by_id": tx.recorded_by_id,
+            "users_id": tx.users_id,
+            "updated_by": tx.updated_by,
+            "payment_methods_id": tx.payment_methods_id,
+            "transaction_type": tx.transaction_type,
+            "updated_at": tx.updated_at,
+            "issubmitted": int(1 if tx.issubmitted else 0),
+        }
+    
     # Regular member
-    if target_uid != int(current_user["id"]):
+    if target_uid != int(current_user.id):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
-    return tx
-    return tx
+    
+    return {
+        "id": tx.id,
+        "amount": tx.amount,
+        "status": tx.status,
+        "proof_reference": tx.proof_reference,
+        "validated_at": tx.validated_at,
+        "created_at": tx.created_at,
+        "recorded_by_id": tx.recorded_by_id,
+        "users_id": tx.users_id,
+        "updated_by": tx.updated_by,
+        "payment_methods_id": tx.payment_methods_id,
+        "transaction_type": tx.transaction_type,
+        "updated_at": tx.updated_at,
+        "issubmitted": int(1 if tx.issubmitted else 0),
+    }
 
 
 @router.post("/transactions/{tx_id}/submit")
 async def submit_transaction(
     tx_id: int,
-    cursor=Depends(get_cursor),
-    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    current_user: Users = Depends(get_current_user),
 ):
     """Submit a SAVED transaction. Changes status to PENDING and issubmitted to 1."""
-    await cursor.execute("SELECT * FROM transactions WHERE id = %s", (tx_id,))
-    tx = await cursor.fetchone()
+    tx = db.query(Transactions).filter(Transactions.id == tx_id).first()
     if not tx:
         raise HTTPException(status_code=404, detail="Transaction not found")
 
     # Only the creator or admin can submit?
     # Usually the person who recorded it.
-    is_admin = await has_role(cursor, current_user["id"], "admin")
-    if int(tx["recorded_by_id"]) != int(current_user["id"]) and not is_admin:
+    roles = await get_user_roles(db, current_user.id)
+    is_admin = "admin" in roles
+    if int(tx.recorded_by_id) != int(current_user.id) and not is_admin:
         raise HTTPException(
             status_code=403, detail="Not authorized to submit this transaction"
         )
 
-    if tx["status"] != "SAVED":
+    if tx.status != "SAVED":
         raise HTTPException(
             status_code=400, detail="Only SAVED transactions can be submitted"
         )
 
     now = datetime.now()
-    await cursor.execute(
-        "UPDATE transactions SET status = 'PENDING', issubmitted = 1, updated_at = %s, updated_by = %s WHERE id = %s",
-        (now, current_user["id"], tx_id),
-    )
+    tx.status = "PENDING"
+    tx.issubmitted = True
+    tx.updated_at = now
+    tx.updated_by = current_user.id
 
-    await notify_treasurers_new_transaction(cursor, current_user["id"])
+    await notify_treasurers_new_transaction(db, current_user.id)
 
     # Auto-approval for treasury if submitting a CONTRIBUTION/DONATIONS
-    user_roles = await get_user_roles(cursor, current_user["id"]) or []
+    user_roles = await get_user_roles(db, current_user.id) or []
     lowered_roles = [r.lower() for r in user_roles]
-    tx_type = (tx.get("transaction_type") or "").upper()
+    tx_type = (tx.transaction_type or "").upper()
     if "treasury" in lowered_roles and tx_type in ("CONTRIBUTION", "DONATIONS"):
-        # Check if already approved (unlikely if it was just SAVED, but possible if logic changes)
-        await cursor.execute(
-            "SELECT id FROM transaction_approvals WHERE transactions_id = %s AND users_id = %s",
-            (tx_id, current_user["id"]),
+        # Check if already approved
+        row = (
+            db.query(TransactionApprovals)
+            .filter(TransactionApprovals.transactions_id == tx_id)
+            .filter(TransactionApprovals.users_id == current_user.id)
+            .first()
         )
-        if not await cursor.fetchone():
-            now = datetime.now()
-            await cursor.execute(
-                """
-                INSERT INTO transaction_approvals (role_at_approval, approved_at, note, transactions_id, users_id)
-                VALUES (%s, %s, %s, %s, %s)
-                """,
-                (
-                    "treasury",
-                    now,
-                    "Auto-approval on submission",
-                    tx_id,
-                    current_user["id"],
-                ),
+        if not row:
+            now2 = datetime.now()
+            db.add(
+                TransactionApprovals(
+                    role_at_approval="treasury",
+                    approved_at=now2,
+                    note="Auto-approval on submission",
+                    transactions_id=tx_id,
+                    users_id=current_user.id,
+                )
             )
-            await cursor.execute(
-                "UPDATE transactions SET status = 'PARTIALLY_APPROVED', updated_by = %s, updated_at = %s WHERE id = %s",
-                (current_user["id"], now, tx_id),
-            )
+            tx.status = "PARTIALLY_APPROVED"
+            tx.updated_by = current_user.id
+            tx.updated_at = now2
 
     try:
-        await cursor.commit()
+        db.commit()
+        db.refresh(tx)
     except Exception:
         logger.exception("[transactions] Commit failed during submit_transaction")
         raise HTTPException(status_code=500, detail="Database commit failed")
-
-    await cursor.execute("SELECT * FROM transactions WHERE id = %s", (tx_id,))
-    return await cursor.fetchone()
+    
+    return {
+        "id": tx.id,
+        "amount": tx.amount,
+        "status": tx.status,
+        "proof_reference": tx.proof_reference,
+        "validated_at": tx.validated_at,
+        "created_at": tx.created_at,
+        "recorded_by_id": tx.recorded_by_id,
+        "users_id": tx.users_id,
+        "updated_by": tx.updated_by,
+        "payment_methods_id": tx.payment_methods_id,
+        "transaction_type": tx.transaction_type,
+        "updated_at": tx.updated_at,
+        "issubmitted": int(1 if tx.issubmitted else 0),
+    }
 
 
 @router.post("/transactions/{tx_id}/reject")
 async def reject_transaction(
     tx_id: int,
     body: TransactionReject,
-    cursor=Depends(get_cursor),
-    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    current_user: Users = Depends(get_current_user),
 ):
     """Reject a transaction."""
-    await cursor.execute("SELECT * FROM transactions WHERE id = %s", (tx_id,))
-    tx = await cursor.fetchone()
+    tx = db.query(Transactions).filter(Transactions.id == tx_id).first()
     if not tx:
         raise HTTPException(status_code=404, detail="Transaction not found")
 
     # Identify user role suitable for this transaction type
-    user_roles_list = await get_user_roles(cursor, current_user["id"]) or []
+    user_roles_list = await get_user_roles(db, current_user.id) or []
     user_roles = set(r.lower() for r in user_roles_list)
-    tx_type = (tx["transaction_type"] or "").upper()
+    tx_type = (tx.transaction_type or "").upper()
 
     rec_role = None
     allowed = False
@@ -1115,85 +1294,97 @@ async def reject_transaction(
     # The requirement is explicit: "stocker cette note dans transaction_approvals.note"
     # We use the determined role.
     if body.reason:
-        await cursor.execute(
-            """INSERT INTO transaction_approvals (role_at_approval, approved_at, note, transactions_id, users_id)
-            VALUES (%s, %s, %s, %s, %s)""",
-            (rec_role, now, f"REJETÉ: {body.reason}", tx_id, current_user["id"]),
+        db.add(
+            TransactionApprovals(
+                role_at_approval=rec_role,
+                approved_at=now,
+                note=f"REJETÉ: {body.reason}",
+                transactions_id=tx_id,
+                users_id=current_user.id,
+            )
         )
 
     # 2. Update status to REJECTED
     try:
-        await cursor.execute(
-            "UPDATE transactions SET status = 'REJECTED', updated_by = %s, updated_at = %s WHERE id = %s",
-            (current_user["id"], now, tx_id),
-        )
-        await cursor.commit()
+        tx.status = "REJECTED"
+        tx.updated_by = current_user.id
+        tx.updated_at = now
+        db.commit()
+        db.refresh(tx)
     except Exception:
         logger.exception("[transactions] Commit failed during reject_transaction")
         raise HTTPException(status_code=500, detail="Database commit failed")
 
-    await cursor.execute("SELECT * FROM transactions WHERE id = %s", (tx_id,))
-    return await cursor.fetchone()
+    return {
+        "id": tx.id,
+        "amount": tx.amount,
+        "status": tx.status,
+        "proof_reference": tx.proof_reference,
+        "validated_at": tx.validated_at,
+        "created_at": tx.created_at,
+        "recorded_by_id": tx.recorded_by_id,
+        "users_id": tx.users_id,
+        "updated_by": tx.updated_by,
+        "payment_methods_id": tx.payment_methods_id,
+        "transaction_type": tx.transaction_type,
+        "updated_at": tx.updated_at,
+        "issubmitted": int(1 if tx.issubmitted else 0),
+    }
 
 
 @router.post("/transactions/bulk-submit")
 async def bulk_submit_transactions(
     body: TransactionBulkSubmit,
-    cursor=Depends(get_cursor),
-    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    current_user: Users = Depends(get_current_user),
 ):
     """Submit multiple SAVED transactions."""
     ids = body.transaction_ids
     if not ids:
         return {"count": 0}
 
-    # Verify ownership or admin
-    placeholders = ",".join(["%s"] * len(ids))
-    await cursor.execute(
-        f"SELECT id, recorded_by_id, status FROM transactions WHERE id IN ({placeholders})",
-        tuple(ids),
-    )
-    rows = await cursor.fetchall()
-
+    is_admin = "admin" in (await get_user_roles(db, current_user.id))
+    rows = db.query(Transactions).filter(Transactions.id.in_(ids)).all()
     valid_ids = []
-    is_admin = await has_role(cursor, current_user["id"], "admin")
-
-    for r in rows:
-        tid = r["id"] if isinstance(r, dict) else r[0]
-        rid = r["recorded_by_id"] if isinstance(r, dict) else r[1]
-        st = r["status"] if isinstance(r, dict) else r[2]
-
-        if st != "SAVED":
+    for tx in rows:
+        if tx.status != "SAVED":
             continue
-        if int(rid) != int(current_user["id"]) and not is_admin:
+        if int(tx.recorded_by_id) != int(current_user.id) and not is_admin:
             continue
-        valid_ids.append(tid)
+        valid_ids.append(tx.id)
 
     if not valid_ids:
         return {"count": 0}
 
     try:
         now = datetime.now()
-        p_valid = ",".join(["%s"] * len(valid_ids))
-        update_sql = f"UPDATE transactions SET status = 'PENDING', issubmitted = 1, updated_at = %s, updated_by = %s WHERE id IN ({p_valid})"
-        await cursor.execute(update_sql, (now, current_user["id"]) + tuple(valid_ids))
-        await cursor.commit()
+        for tx in rows:
+            if tx.id in valid_ids:
+                tx.status = "PENDING"
+                tx.issubmitted = True
+                tx.updated_at = now
+                tx.updated_by = current_user.id
     except Exception:
         logger.exception("[transactions] Commit failed during bulk_submit_transactions")
         raise HTTPException(status_code=500, detail="Database commit failed")
 
-    await notify_treasurers_new_transaction(
-        cursor, current_user["id"], count=len(valid_ids)
-    )
-
+    await notify_treasurers_new_transaction(db, current_user.id, count=len(valid_ids))
+    
+    try:
+        db.commit()
+        db.refresh(tx)
+    except Exception:
+        logger.exception("[transactions] Commit failed during bulk_submit_transactions")
+        raise HTTPException(status_code=500, detail="Database commit failed")
+    
     return {"count": len(valid_ids)}
 
 
 @router.post("/transactions/bulk-approve")
 async def bulk_approve_transactions(
     body: TransactionBulkApprove,
-    cursor=Depends(get_cursor),
-    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    current_user: Users = Depends(get_current_user),
 ):
     """Bulk approve transactions."""
     ids = body.transaction_ids
@@ -1203,32 +1394,27 @@ async def bulk_approve_transactions(
     validated_ids = []
     processed_count = 0
 
-    user_roles_list = await get_user_roles(cursor, current_user["id"]) or []
+    user_roles_list = await get_user_roles(db, current_user.id) or []
     user_roles = set(r.lower() for r in user_roles_list)
 
     # Cache board count
-    await cursor.execute(
-        """
-        SELECT COUNT(DISTINCT ra.users_id) as total 
-        FROM role_attribution ra 
-        JOIN roles r ON ra.roles_id = r.id
-        WHERE r.role = 'board'
-        """
+    row_board = (
+        db.query(func.count(func.distinct(RoleAttribution.users_id)).label("total"))
+        .join(Roles, Roles.id == RoleAttribution.roles_id)
+        .filter(Roles.role == "board")
+        .first()
     )
-    row_board = await cursor.fetchone()
-    total_board = row_board["total"] if row_board else 0
+    total_board = row_board.total if row_board else 0
 
     for tx_id in ids:
-        # Fetch tx
-        await cursor.execute("SELECT * FROM transactions WHERE id = %s", (tx_id,))
-        tx = await cursor.fetchone()
+        tx = db.query(Transactions).filter(Transactions.id == tx_id).first()
         if not tx:
             continue
 
-        if tx["status"] not in ("PENDING", "PARTIALLY_APPROVED"):
+        if tx.status not in ("PENDING", "PARTIALLY_APPROVED"):
             continue
 
-        tx_type = (tx["transaction_type"] or "").upper()
+        tx_type = (tx.transaction_type or "").upper()
 
         # Access control
         rec_role = None
@@ -1245,35 +1431,47 @@ async def bulk_approve_transactions(
                 rec_role, allowed = "admin", True
         else:
             if "admin" in user_roles:
-                rec_role = "admin", True
+                rec_role, allowed = "admin", True
 
         if not allowed or not rec_role:
             continue
 
         # Duplicate check
-        await cursor.execute(
-            "SELECT 1 FROM transaction_approvals WHERE transactions_id = %s AND users_id = %s",
-            (tx_id, current_user["id"]),
+        row_dup = (
+            db.query(TransactionApprovals)
+            .filter(TransactionApprovals.transactions_id == tx_id)
+            .filter(TransactionApprovals.users_id == current_user.id)
+            .first()
         )
-        if await cursor.fetchone():
+        if row_dup:
             continue
 
         # Insert approval
         now = datetime.now()
-        await cursor.execute(
-            """INSERT INTO transaction_approvals (role_at_approval, approved_at, note, transactions_id, users_id)
-               VALUES (%s, %s, %s, %s, %s)""",
-            (rec_role, now, body.note, tx_id, current_user["id"]),
+        db.add(
+            TransactionApprovals(
+                role_at_approval=rec_role,
+                approved_at=now,
+                note=body.note,
+                transactions_id=tx_id,
+                users_id=current_user.id,
+            )
         )
+        # Flush to ensure counts include this approval
+        try:
+            db.flush()
+        except Exception:
+            logger.exception("[transactions] Flush failed during bulk_approve_transactions")
+            raise HTTPException(status_code=500, detail="Database flush failed")
         processed_count += 1
 
         # Check threshold
-        await cursor.execute(
-            "SELECT COUNT(DISTINCT users_id) as cnt FROM transaction_approvals WHERE transactions_id = %s",
-            (tx_id,),
+        cnt = (
+            db.query(TransactionApprovals.users_id)
+            .filter(TransactionApprovals.transactions_id == tx_id)
+            .distinct()
+            .count()
         )
-        row = await cursor.fetchone()
-        cnt = row["cnt"] if row else 0
 
         validated = False
 
@@ -1285,24 +1483,31 @@ async def bulk_approve_transactions(
                 validated = True
 
         if validated:
-            await cursor.execute(
-                "UPDATE transactions SET status = %s, validated_at = %s, updated_by = %s, updated_at = %s WHERE id = %s",
-                ("VALIDATED", now, current_user["id"], now, tx_id),
-            )
+            tx.status = "VALIDATED"
+            tx.validated_at = now
+            tx.updated_by = current_user.id
+            tx.updated_at = now
             validated_ids.append(tx_id)
         else:
-            await cursor.execute(
-                "UPDATE transactions SET status = %s, updated_by = %s, updated_at = %s WHERE id = %s",
-                ("PARTIALLY_APPROVED", current_user["id"], now, tx_id),
-            )
-
-    await cursor.commit()
+            tx.status = "PARTIALLY_APPROVED"
+            tx.updated_by = current_user.id
+            tx.updated_at = now
 
     if validated_ids:
         try:
-            await notify_transactions_validated(cursor, validated_ids)
+            await notify_transactions_validated(db, validated_ids)
         except Exception:
-            pass
+            logger.exception("[transactions] Notification failed during bulk_approve_transactions")
+            raise HTTPException(status_code=500, detail="Notification failed")
+
+    try:
+        db.commit()
+        db.refresh(tx)
+    except Exception:
+        logger.exception(
+            "[transactions] Commit failed during update_transaction_status"
+        )
+        raise HTTPException(status_code=500, detail="Database commit failed")
 
     return {"processed": processed_count, "validated": len(validated_ids)}
 
@@ -1310,75 +1515,62 @@ async def bulk_approve_transactions(
 @router.delete("/transactions/{tx_id}")
 async def delete_transaction(
     tx_id: int,
-    cursor=Depends(get_cursor),
-    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    current_user: Users = Depends(get_current_user),
 ):
     """Delete a transaction. Restricted to elevated roles. Only PENDING or SAVED transactions can be deleted.
     Also deletes any related approvals to satisfy FK constraints.
     """
+    roles = await get_user_roles(db, current_user.id)
+    lowered = set(roles)
     if not (
-        await has_role(cursor, current_user["id"], "admin")
-        or await has_role(cursor, current_user["id"], "admingroup")
-        or await has_role(cursor, current_user["id"], "treasury")
-        or await has_role(cursor, current_user["id"], "board")
+        "admin" in lowered
+        or "admingroup" in lowered
+        or "treasury" in lowered
+        or "board" in lowered
     ):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
 
-    await cursor.execute(
-        "SELECT status, proof_reference, users_id FROM transactions WHERE id = %s",
-        (tx_id,),
-    )
-    row = await cursor.fetchone()
-    if not row:
+    tx = db.query(Transactions).filter(Transactions.id == tx_id).first()
+    if not tx:
         raise HTTPException(status_code=404, detail="Transaction not found")
 
-    if isinstance(row, dict):
-        status_val = row["status"]
-        proof_ref = row.get("proof_reference")
-        target_uid = int(row.get("users_id"))
-    else:
-        # Fallback for tuple cursor if any
-        status_val = row[0]
-        proof_ref = row[1] if len(row) > 1 else None
-        target_uid = int(row[2]) if len(row) > 2 else None
-
-    if status_val not in ("PENDING", "SAVED"):
+    if tx.status not in ("PENDING", "SAVED"):
         raise HTTPException(
             status_code=400, detail="Only PENDING or SAVED transactions can be deleted"
         )
 
     # Restrict admingroup to assigned users (or self)
-    is_admin = await has_role(cursor, current_user["id"], "admin")
-    is_treasury = await has_role(cursor, current_user["id"], "treasury")
-    is_board = await has_role(cursor, current_user["id"], "board")
-    is_group_admin = await has_role(cursor, current_user["id"], "admingroup")
+    roles_set = set(await get_user_roles(db, current_user.id))
+    is_admin = "admin" in roles_set
+    is_treasury = "treasury" in roles_set
+    is_board = "board" in roles_set
+    is_group_admin = "admingroup" in roles_set
     if is_group_admin and not (is_admin or is_treasury or is_board):
-        if target_uid != int(current_user["id"]):
-            await cursor.execute(
-                "SELECT 1 FROM family_assignation WHERE users_responsable_id = %s AND users_assigned_id = %s",
-                (current_user["id"], target_uid),
+        if tx.users_id != int(current_user.id):
+            row = (
+                db.query(FamilyAssignation)
+                .filter(FamilyAssignation.users_responsable_id == current_user.id)
+                .filter(FamilyAssignation.users_assigned_id == tx.users_id)
+                .first()
             )
-            if not await cursor.fetchone():
+            if not row:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden"
                 )
 
-    # Delete approvals first (FK constraint NO ACTION)
-    await cursor.execute(
-        "DELETE FROM transaction_approvals WHERE transactions_id = %s",
-        (tx_id,),
-    )
-    # Delete the transaction itself
-    await cursor.execute("DELETE FROM transactions WHERE id = %s", (tx_id,))
-    try:
-        await cursor.commit()
-    except Exception:
-        logger.exception("[transactions] Commit failed during delete_transaction")
-        raise HTTPException(status_code=500, detail="Database commit failed")
+    proof_ref = tx.proof_reference
+
+    # Delete approvals first
+    db.query(TransactionApprovals).filter(
+        TransactionApprovals.transactions_id == tx_id
+    ).delete(synchronize_session=False)
+    # Delete transaction
+    db.delete(tx)
 
     # Attempt to delete proof image if it exists
     if proof_ref and (
-        proof_ref.startswith("http://") or proof_ref.startswith("https://")
+        str(proof_ref).startswith("http://") or str(proof_ref).startswith("https://")
     ):
         try:
             aws = AwsFile(settings)
@@ -1387,6 +1579,13 @@ async def delete_transaction(
             logger.warning(
                 f"Failed to delete proof image for transaction {tx_id}", exc_info=True
             )
+    
+    try:
+        db.commit()
+        db.refresh(tx)
+    except Exception:
+        logger.exception("[transactions] Commit failed during delete_transaction")
+        raise HTTPException(status_code=500, detail="Database commit failed")
 
     return {"status": "deleted"}
 
@@ -1399,51 +1598,60 @@ async def delete_transaction(
 @router.get("/transactions/{tx_id}/approvals")
 async def list_transaction_approvals(
     tx_id: int,
-    cursor=Depends(get_cursor),
-    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    current_user: Users = Depends(get_current_user),
 ):
     """List approvals for a given transaction."""
-    await cursor.execute(
-        """
-		SELECT ta.* , u.username AS approved_by_username
-		FROM transaction_approvals ta
-		JOIN users u ON u.id = ta.users_id
-		WHERE ta.transactions_id = %s
-		ORDER BY ta.approved_at DESC
-		""",
-        (tx_id,),
+    rows = (
+        db.query(TransactionApprovals, Users.username.label("approved_by_username"))
+        .join(Users, Users.id == TransactionApprovals.users_id)
+        .filter(TransactionApprovals.transactions_id == tx_id)
+        .order_by(TransactionApprovals.approved_at.desc())
+        .all()
     )
-    return await cursor.fetchall()
+    out = []
+    for ta, uname in rows:
+        out.append(
+            {
+                "id": ta.id,
+                "role_at_approval": ta.role_at_approval,
+                "approved_at": ta.approved_at,
+                "note": ta.note,
+                "transactions_id": ta.transactions_id,
+                "users_id": ta.users_id,
+                "approved_by_username": uname,
+            }
+        )
+    return out
 
 
 @router.post("/transactions/{tx_id}/approvals")
 async def approve_transaction(
     tx_id: int,
     body: TransactionApprovalCreate,
-    cursor=Depends(get_cursor),
-    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    current_user: Users = Depends(get_current_user),
 ):
     """Approve a transaction.
     Rules:
     - Contribution/Donations: Treasury (or Admin) can approve. Validation requires 2 approvals.
     - Expense: Board (or Admin) can approve. Validation requires ALL board members.
     """
-    await cursor.execute("SELECT * FROM transactions WHERE id = %s", (tx_id,))
-    tx = await cursor.fetchone()
+    tx = db.query(Transactions).filter(Transactions.id == tx_id).first()
     if not tx:
         raise HTTPException(status_code=404, detail="Transaction not found")
 
     # Check status
-    if tx["status"] not in ("PENDING", "PARTIALLY_APPROVED"):
+    if tx.status not in ("PENDING", "PARTIALLY_APPROVED"):
         raise HTTPException(
             status_code=400, detail="Transaction cannot be approved in current status"
         )
 
     # Determine user roles
-    user_roles_list = await get_user_roles(cursor, current_user["id"]) or []
+    user_roles_list = await get_user_roles(db, current_user.id) or []
     user_roles = set(r.lower() for r in user_roles_list)
 
-    tx_type = (tx["transaction_type"] or "").upper()  # CONTRIBUTION, DONATIONS, EXPENSE
+    tx_type = (tx.transaction_type or "").upper()  # CONTRIBUTION, DONATIONS, EXPENSE
 
     # 1. Access Control & Role Selection
     rec_role = None
@@ -1487,80 +1695,97 @@ async def approve_transaction(
             )
 
     # 2. Duplicate Check
-    await cursor.execute(
-        "SELECT id FROM transaction_approvals WHERE transactions_id = %s AND users_id = %s",
-        (tx_id, current_user["id"]),
-    )
-    if await cursor.fetchone():
+    if (
+        db.query(TransactionApprovals)
+        .filter(TransactionApprovals.transactions_id == tx_id)
+        .filter(TransactionApprovals.users_id == current_user.id)
+        .first()
+    ):
         raise HTTPException(
             status_code=409, detail="You have already approved this transaction"
         )
 
     now = datetime.now()
-    await cursor.execute(
-        """
-		INSERT INTO transaction_approvals (role_at_approval, approved_at, note, transactions_id, users_id)
-		VALUES (%s, %s, %s, %s, %s)
-		""",
-        (rec_role, now, body.note, tx_id, current_user["id"]),
+    db.add(
+        TransactionApprovals(
+            role_at_approval=rec_role,
+            approved_at=now,
+            note=body.note,
+            transactions_id=tx_id,
+            users_id=current_user.id,
+        )
     )
+    # Ensure the new approval is flushed so the subsequent count includes it
+    try:
+        db.flush()
+    except Exception:
+        raise HTTPException(status_code=500, detail="Database flush failed")
 
     # 3. Check Validation Threshold
-    await cursor.execute(
-        "SELECT COUNT(DISTINCT users_id) as cnt FROM transaction_approvals WHERE transactions_id = %s",
-        (tx_id,),
+    cnt = (
+        db.query(TransactionApprovals.users_id)
+        .filter(TransactionApprovals.transactions_id == tx_id)
+        .distinct()
+        .count()
     )
-    row = await cursor.fetchone()
-    cnt = row["cnt"] if row else 0
 
     validated = False
 
     if tx_type == "EXPENSE":
-        # "tous les membres du conseils d'administration"
-        await cursor.execute(
-            """
-            SELECT COUNT(DISTINCT ra.users_id) as total 
-            FROM role_attribution ra 
-            JOIN roles r ON ra.roles_id = r.id
-            WHERE r.role = 'board'
-        """
+        # Get total board members
+        row_board = (
+            db.query(func.count(func.distinct(RoleAttribution.users_id)).label("total"))
+            .join(Roles, Roles.id == RoleAttribution.roles_id)
+            .filter(Roles.role == "board")
+            .first()
         )
-        row_board = await cursor.fetchone()
-        total_board = row_board["total"] if row_board else 0
+        total_board = row_board.total if row_board else 0
 
         if total_board > 0 and cnt >= total_board:
             validated = True
 
     elif tx_type in ("CONTRIBUTION", "DONATIONS"):
-        # "c'est deux personnes"
         if cnt >= 2:
             validated = True
 
     if validated:
-        await cursor.execute(
-            "UPDATE transactions SET status = %s, validated_at = %s, updated_by = %s, updated_at = %s WHERE id = %s",
-            ("VALIDATED", now, current_user["id"], now, tx_id),
-        )
+        tx.status = "VALIDATED"
+        tx.validated_at = now
+        tx.updated_by = current_user.id
+        tx.updated_at = now
     else:
-        await cursor.execute(
-            "UPDATE transactions SET status = %s, updated_by = %s, updated_at = %s WHERE id = %s",
-            ("PARTIALLY_APPROVED", current_user["id"], now, tx_id),
-        )
+        tx.status = "PARTIALLY_APPROVED"
+        tx.updated_by = current_user.id
+        tx.updated_at = now
+
+    if validated:
+        try:
+            await notify_transactions_validated(db, [tx_id])
+        except Exception as e:
+            logger.warning(f"Failed to notify validation: {e}")
 
     try:
-        await cursor.commit()
+        db.commit()
+        db.refresh(tx)
     except Exception:
         logger.exception("[transactions] Commit failed during approve_transaction")
         raise HTTPException(status_code=500, detail="Database commit failed")
 
-    if validated:
-        try:
-            await notify_transactions_validated(cursor, [tx_id])
-        except Exception as e:
-            logger.warning(f"Failed to notify validation: {e}")
-
-    await cursor.execute("SELECT * FROM transactions WHERE id = %s", (tx_id,))
     return {
-        "transaction": await cursor.fetchone(),
+        "transaction": {
+            "id": tx.id,
+            "amount": tx.amount,
+            "status": tx.status,
+            "proof_reference": tx.proof_reference,
+            "validated_at": tx.validated_at,
+            "created_at": tx.created_at,
+            "recorded_by_id": tx.recorded_by_id,
+            "users_id": tx.users_id,
+            "updated_by": tx.updated_by,
+            "payment_methods_id": tx.payment_methods_id,
+            "transaction_type": tx.transaction_type,
+            "updated_at": tx.updated_at,
+            "issubmitted": int(1 if tx.issubmitted else 0),
+        },
         "approver_role": rec_role,
     }
