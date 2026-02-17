@@ -1,6 +1,13 @@
+/// <reference types="vitest" />
 import { defineConfig } from 'vite'
+import type { UserConfig } from 'vite'
+import type { InlineConfig } from 'vitest/node'
 import react from '@vitejs/plugin-react-swc'
 import path from 'path'
+
+interface VitestConfigExport extends UserConfig {
+  test?: InlineConfig
+}
 
 // https://vite.dev/config/
 export default defineConfig({
@@ -25,4 +32,4 @@ export default defineConfig({
       reporter: ['text', 'html'],
     },
   },
-})
+} as VitestConfigExport)
