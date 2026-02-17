@@ -7,6 +7,12 @@ import logging
 logger = logging.getLogger("aws")
 
 class AwsFile:
+    def __init__(self, settings):
+        self.settings = settings
+        if not self.settings.aws_s3_bucket or not self.settings.aws_region:
+            raise RuntimeError("AWS S3 not configured: missing bucket or region")
+        self._client = self._build_client()
+    
     def delete_image(self, url: Optional[str]) -> bool:
         """Delete an image from S3 using its URL."""
         if not url:
@@ -29,12 +35,7 @@ class AwsFile:
         except Exception as e:
             logger.exception(f"[aws] Failed to delete image: {key}")
             return False
-    def __init__(self, settings):
-        self.settings = settings
-        if not self.settings.aws_s3_bucket or not self.settings.aws_region:
-            raise RuntimeError("AWS S3 not configured: missing bucket or region")
-        self._client = self._build_client()
-
+    
     def _build_client(self):
         session_kwargs = {}
         if self.settings.aws_access_key_id and self.settings.aws_secret_access_key:

@@ -329,6 +329,14 @@ export default function HomeCaisse() {
         }
     }, [txs, filter, t])
 
+    const pendingApprovalsForUser = useMemo(() => {
+        if (!user) return 0
+        return txs.filter(tx =>
+            tx.status === 'PENDING' ||
+            (tx.status === 'PARTIALLY_APPROVED' && !tx.approvals?.some(a => a.users_id === user.id))
+        ).length
+    }, [txs, user])
+
     const [showAdd, setShowAdd] = useState(false)
     const canAdd = !!user?.roles?.some(r => ['admin', 'admingroup', 'treasury', 'member'].includes((r.role || '').toLowerCase()))
 
@@ -360,9 +368,9 @@ export default function HomeCaisse() {
                     </div>
 
                     <div className="d-flex gap-2">
-                        {user?.roles?.some(r => ['board', 'treasury'].includes((r.role || '').toLowerCase())) && (
+                        {user?.roles?.some(r => ['board', 'treasury'].includes((r.role || '').toLowerCase())) && pendingApprovalsForUser > 0 && (
                             <Link to="/approvals" className="btn btn-warning btn-sm text-dark d-flex align-items-center px-3 rounded-pill fw-bold">
-                                {t('homecaisse.buttons.validation')} ({txs.filter(t => t.status === 'PENDING' || t.status === 'PARTIALLY_APPROVED').length})
+                                {t('homecaisse.buttons.validation')} ({pendingApprovalsForUser})
                             </Link>
                         )}
                         {canAdd && (

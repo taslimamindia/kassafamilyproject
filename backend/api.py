@@ -1,50 +1,53 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-import logging
 from contextlib import asynccontextmanager
+import logging
+from models_orm.database import engine, Base
+# We must import models so SQLAlchemy "knows" about them before creating tables
+import models_orm.auth
+# import models.users
+# import models.finance
+# import models.access_control
+# import models.messaging
 
-from routers import auth, users, roles, system, messages, transactions
-from routers import admin_db
-from routers import family_assignation as family_assignation_router
-from database import get_db_connection
-from dependencies import ensure_revoked_tokens_table
-from utils import init_users_graph
+# 2. Router Imports
+from routers import auth, roles, users, messages, transactions, family_assignation, system, admin_db
+# Uncomment these as you migrate them to ORM:
+# from routers import users, roles, system, messages, transactions
+# from routers import admin_db
+# from routers import family_assignation as family_assignation_router
 
+# Logging setup
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("api")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    conn = get_db_connection()
-    cursor = conn.cursor(dictionary=True)
+    """
+    Application Lifecycle Manager.
+    Replaces the old raw SQL connection logic.
+    """
     try:
-        ensure_revoked_tokens_table(cursor)
-        try:
-            conn.commit()
-        except Exception:
-            logging.exception(
-                "[lifespan] Commit failed after ensuring revoked_tokens table"
-            )
-        # Initialize users graph at startup
-        try:
-            init_users_graph(app)
-        except Exception:
-            logging.exception("[lifespan] Failed to initialize users graph")
-        yield
-    finally:
-        try:
-            cursor.close()
-        finally:
-            try:
-                conn.close()
-            except Exception:
-                logging.exception("[lifespan] Failed to close DB connection")
+        # A. Create Tables
+        # This replaces 'ensure_revoked_tokens_table'.
+        # It checks all imported models and creates tables if they don't exist.
+        logger.info("[lifespan] Checking database tables...")
+        Base.metadata.create_all(bind=engine)
+        logger.info("[lifespan] Database tables verified/created.")
 
+        yield # Application is running
+
+    except Exception as e:
+        logger.exception("[lifespan] Critical startup error")
+        raise e
+    finally:
+        # SQLAlchemy handles connection pooling automatically, 
+        # so we don't need to manually close a cursor here.
+        pass
 
 app = FastAPI(lifespan=lifespan)
 
-# Basic logging configuration
-logging.basicConfig(level=logging.INFO)
-
-# CORS: Allow all origins (update for prod security later)
+# CORS Configuration
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -53,11 +56,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Register Routers
 app.include_router(auth.router, prefix="/auth", tags=["Auth"])
-app.include_router(users.router, tags=["Users"])
 app.include_router(roles.router, tags=["Roles"])
-app.include_router(system.router, tags=["System"])
+app.include_router(users.router, tags=["Users"]) 
 app.include_router(messages.router, tags=["Messages"])
 app.include_router(transactions.router, tags=["Transactions"])
-app.include_router(family_assignation_router.router, tags=["FamilyAssignations"])
-app.include_router(admin_db.router, tags=["AdminDB"])
+app.include_router(family_assignation.router, tags=["Family Assignation"]) 
+app.include_router(system.router, tags=["System"]) 
+app.include_router(admin_db.router, tags=["Admin DB"])

@@ -6,7 +6,8 @@ import asyncio
 
 import networkx as nx  # type: ignore
 
-from database import get_db_connection
+from models_orm.database import engine
+from sqlalchemy import text, Table, MetaData, select
 
 logger = logging.getLogger("users")
 
@@ -334,12 +335,18 @@ def init_users_graph(app) -> None:
     Uses a synchronous pooled DB connection.
     """
     conn = None
-    cursor = None
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor(dictionary=True)
-        cursor.execute("SELECT id, id_father, id_mother FROM users")
-        rows = cursor.fetchall() or []
+        metadata = MetaData()
+        users_table = Table("users", metadata, autoload_with=engine)
+        with engine.connect() as conn:
+            result = conn.execute(
+                select(
+                    users_table.c.id,
+                    users_table.c.id_father,
+                    users_table.c.id_mother,
+                )
+            )
+            rows = [dict(r) for r in result.mappings().all()]
         G = _build_graph_from_rows(rows)
         # Attach to app state
         if not hasattr(app.state, "users_graph_lock"):
@@ -360,15 +367,7 @@ def init_users_graph(app) -> None:
     except Exception:
         logger.exception("[graph] Failed to initialize users graph")
     finally:
-        try:
-            if cursor:
-                cursor.close()
-        finally:
-            try:
-                if conn:
-                    conn.close()
-            except Exception:
-                pass
+        pass
 
 
 async def update_users_graph(app, cursor_async=None) -> None:
@@ -386,25 +385,19 @@ async def update_users_graph(app, cursor_async=None) -> None:
                 "[graph] Failed to fetch rows with async cursor; falling back to sync"
             )
     if not rows:
-        # Fallback to sync query in thread
+        # Fallback to sync query in thread using SQLAlchemy engine
         def _fetch_sync():
-            conn_ = None
-            cur_ = None
-            try:
-                conn_ = get_db_connection()
-                cur_ = conn_.cursor(dictionary=True)
-                cur_.execute("SELECT id, id_father, id_mother FROM users")
-                return cur_.fetchall() or []
-            finally:
-                try:
-                    if cur_:
-                        cur_.close()
-                finally:
-                    try:
-                        if conn_:
-                            conn_.close()
-                    except Exception:
-                        pass
+            metadata = MetaData()
+            users_table = Table("users", metadata, autoload_with=engine)
+            with engine.connect() as conn_:
+                result = conn_.execute(
+                    select(
+                        users_table.c.id,
+                        users_table.c.id_father,
+                        users_table.c.id_mother,
+                    )
+                )
+                return [dict(r) for r in result.mappings().all()]
 
         rows = await asyncio.to_thread(_fetch_sync)
 
@@ -496,61 +489,3 @@ async def get_family_rows(
                 }
             )
     return out
-
-
-async def send_notification(
-    cursor,
-    recipient_ids: List[int],
-    message_text: str,
-    sender_id: Optional[int] = None,
-    message_type: str = "MESSAGE",
-    link: Optional[str] = None,
-):
-    """
-    Sends a message to a list of recipients.
-    Handles 'messages' insertion and 'messages_recipients' entries.
-    Auto-excludes sender_id from recipient_ids if present.
-    """
-    if not recipient_ids:
-        return
-
-    # Filter out sender if present, and remove duplicates
-    targets = set(recipient_ids)
-    if sender_id is not None and sender_id in targets:
-        try:
-            targets.remove(sender_id)
-        except KeyError:
-            pass
-    
-    if not targets:
-        return
-
-    now = datetime.now()
-    try:
-        # 1. Insert message body
-        await cursor.execute(
-            """
-            INSERT INTO messages (message, message_type, received_at, link)
-            VALUES (%s, %s, %s, %s)
-            """,
-            (message_text, message_type, now, link),
-        )
-        msg_id = cursor.lastrowid
-
-        # 3. Insert recipients
-        values = []
-        for rid in targets:
-            sid = sender_id if sender_id else 1 
-            values.append((0, sid, rid, msg_id))
-            next_rec_id += 1
-
-        if values:
-            await cursor.executemany(
-                """
-                INSERT INTO messages_recipients (isreaded, sender_id, receiver_id, messages_id)
-                VALUES (%s, %s, %s, %s)
-                """,
-                values,
-            )
-    except Exception as e:
-        logger.error(f"[utils] send_notification failed: {e}")

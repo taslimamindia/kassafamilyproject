@@ -1,8 +1,15 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Request
-from typing import List, Dict, Any, Optional, Tuple
+from typing import List, Dict, Any, Optional
 import logging
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session
+from sqlalchemy import Table, MetaData
+from sqlalchemy.engine import Result
+from sqlalchemy import delete as sqla_delete
+from sqlalchemy import desc
+from sqlalchemy import inspect
 
-from dependencies import get_cursor, get_current_user, has_role
+from models_orm.dependencies import get_db, get_current_user, get_user_roles
 from settings import settings
 from aws_file import AwsFile
 
@@ -10,73 +17,55 @@ router = APIRouter()
 logger = logging.getLogger("admin_db")
 
 
-async def _get_db_name(cursor) -> str:
-    await cursor.execute("SELECT DATABASE() AS db")
-    row = await cursor.fetchone() or {}
-    db = row.get("db") or row.get("DATABASE()")
-    if not db:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Cannot detect current database",
-        )
-    return str(db)
+def _get_db_name(db: Session) -> Optional[str]:
+    try:
+        bind = db.get_bind()
+        return getattr(getattr(bind, "url", None), "database", None)
+    except Exception:
+        return None
 
 
-async def _ensure_admin(cursor, current_user: dict):
+async def _ensure_admin(db: Session, current_user):
     if not current_user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized"
-        )
-    if not await has_role(cursor, current_user["id"], "admin"):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
+    roles = await get_user_roles(db, current_user.id)
+    if "admin" not in roles:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admins only")
 
 
 @router.get("/admin/db/tables")
-async def list_tables(
-    cursor=Depends(get_cursor), current_user: dict = Depends(get_current_user)
-):
-    await _ensure_admin(cursor, current_user)
-    db = await _get_db_name(cursor)
-    await cursor.execute(
-        """
-        SELECT TABLE_NAME AS name, TABLE_ROWS AS rowCount
-        FROM information_schema.TABLES
-        WHERE TABLE_SCHEMA = %s AND TABLE_TYPE = 'BASE TABLE'
-        ORDER BY TABLE_NAME
-        """,
-        (db,),
-    )
-    rows = await cursor.fetchall() or []
+async def list_tables(db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+    await _ensure_admin(db, current_user)
+    insp = inspect(db.get_bind())
+    table_names = sorted(insp.get_table_names())
     result = []
-    for r in rows:
-        name = r.get("name") or r.get("TABLE_NAME")
-        rc = r.get("rowCount") or r.get("TABLE_ROWS")
+    metadata = MetaData()
+    for name in table_names:
         try:
-            rc = int(rc) if rc is not None else None
+            tbl = Table(name, metadata, autoload_with=db.get_bind())
+            cnt = db.execute(select(func.count()).select_from(tbl)).scalar()
+            row_count = int(cnt or 0)
         except Exception:
-            rc = None
-        result.append({"name": name, "rowCount": rc})
+            row_count = None
+        result.append({"name": name, "rowCount": row_count})
     return result
 
 
 @router.get("/admin/db/deletion-order")
-async def deletion_order(
-    cursor=Depends(get_cursor), current_user: dict = Depends(get_current_user)
-):
-    await _ensure_admin(cursor, current_user)
-    db = await _get_db_name(cursor)
-    # child -> parent edges (child depends on parent)
-    await cursor.execute(
-        """
-        SELECT DISTINCT kcu.TABLE_NAME AS child, kcu.REFERENCED_TABLE_NAME AS parent
-        FROM information_schema.KEY_COLUMN_USAGE kcu
-        WHERE kcu.TABLE_SCHEMA = %s AND kcu.REFERENCED_TABLE_NAME IS NOT NULL
-        """,
-        (db,),
-    )
-    edges = await cursor.fetchall() or []
+async def deletion_order(db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+    await _ensure_admin(db, current_user)
+    insp = inspect(db.get_bind())
+    table_names = insp.get_table_names()
+    # child -> parent edges
+    edges = []
+    for t in table_names:
+        fks = insp.get_foreign_keys(t)
+        for fk in fks:
+            parent = fk.get("referred_table")
+            child = t
+            if parent:
+                edges.append({"child": child, "parent": parent})
 
-    # Build adjacency and in-degree
     children: Dict[str, List[str]] = {}
     parents: Dict[str, List[str]] = {}
     nodes: set[str] = set()
@@ -91,11 +80,7 @@ async def deletion_order(
         parents.setdefault(p, []).append(c)
 
     # Include tables with no FKs
-    await cursor.execute(
-        "SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA=%s AND TABLE_TYPE='BASE TABLE'",
-        (db,),
-    )
-    all_tables = [r.get("TABLE_NAME") for r in (await cursor.fetchall() or [])]
+    all_tables = table_names
     for t in all_tables:
         nodes.add(t)
         children.setdefault(t, [])
@@ -156,15 +141,13 @@ async def _table_exists(cursor, db: str, table: str) -> bool:
 async def get_rows(
     table: str,
     request: Request,
-    cursor=Depends(get_cursor),
-    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
 ):
-    await _ensure_admin(cursor, current_user)
-    db = await _get_db_name(cursor)
-    if not await _table_exists(cursor, db, table):
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Table not found"
-        )
+    await _ensure_admin(db, current_user)
+    insp = inspect(db.get_bind())
+    if table not in insp.get_table_names():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Table not found")
     qp = request.query_params
     try:
         page = max(1, int(qp.get("page") or 1))
@@ -176,45 +159,43 @@ async def get_rows(
         size = 50
     offset = (page - 1) * size
 
-    pk = await _resolve_pk(cursor, db, table)
+    # Resolve primary key
+    pk_info = insp.get_pk_constraint(table) or {}
+    pk_cols = pk_info.get("constrained_columns") or []
+    pk = pk_cols[0] if pk_cols else None
 
     # Total count
-    await cursor.execute(f"SELECT COUNT(*) AS c FROM `{table}`")
-    total_row = await cursor.fetchone() or {}
-    total = int(total_row.get("c") or 0)
+    metadata = MetaData()
+    tbl = Table(table, metadata, autoload_with=db.get_bind())
+    total = int(db.execute(select(func.count()).select_from(tbl)).scalar() or 0)
 
     # Fetch rows
+    stmt = select(tbl)
     if pk:
-        await cursor.execute(
-            f"SELECT * FROM `{table}` ORDER BY `{pk}` DESC LIMIT %s OFFSET %s",
-            (size, offset),
-        )
-    else:
-        await cursor.execute(
-            f"SELECT * FROM `{table}` LIMIT %s OFFSET %s", (size, offset)
-        )
-    rows = await cursor.fetchall() or []
-    # Ensure an 'id' key exists for UI selection
-    if pk:
-        for r in rows:
-            if "id" not in r:
-                r["id"] = r.get(pk)
-    return {"rows": rows, "total": total, "pk": pk}
+        stmt = stmt.order_by(desc(tbl.c[pk]))
+    stmt = stmt.limit(size).offset(offset)
+    res: Result = db.execute(stmt)
+    out_rows: List[Dict[str, Any]] = []
+    cols = [c.name for c in tbl.columns]
+    for row in res.fetchall():
+        d = {col: row._mapping[col] for col in cols}
+        if pk and "id" not in d:
+            d["id"] = d.get(pk)
+        out_rows.append(d)
+    return {"rows": out_rows, "total": total, "pk": pk}
 
 
 @router.delete("/admin/db/tables/{table}/rows")
 async def delete_rows_endpoint(
     table: str,
     body: Dict[str, Any],
-    cursor=Depends(get_cursor),
-    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
 ):
-    await _ensure_admin(cursor, current_user)
-    db = await _get_db_name(cursor)
-    if not await _table_exists(cursor, db, table):
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Table not found"
-        )
+    await _ensure_admin(db, current_user)
+    insp = inspect(db.get_bind())
+    if table not in insp.get_table_names():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Table not found")
 
     ids = body.get("ids")
     if not isinstance(ids, list) or len(ids) == 0:
@@ -223,7 +204,9 @@ async def delete_rows_endpoint(
             detail="'ids' array required",
         )
 
-    pk = await _resolve_pk(cursor, db, table)
+    pk_info = insp.get_pk_constraint(table) or {}
+    pk_cols = pk_info.get("constrained_columns") or []
+    pk = pk_cols[0] if pk_cols else None
     if not pk:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -231,35 +214,41 @@ async def delete_rows_endpoint(
         )
 
     # Prepare placeholders and values
-    placeholders = ",".join(["%s"] * len(ids))
+    metadata = MetaData()
+    tbl = Table(table, metadata, autoload_with=db.get_bind())
 
     # Before deletion: collect URLs to delete from AWS for specific tables
     urls_to_delete: list[str] = []
     t_lower = table.lower()
     if t_lower in {"users", "transactions"}:
-        await cursor.execute(
-            f"SELECT * FROM `{table}` WHERE `{pk}` IN ({placeholders})",
-            tuple(ids),
-        )
-        rows = await cursor.fetchall() or []
-        for r in rows:
+        # Fetch rows to determine URLs to delete
+        stmt_sel = select(tbl).where(tbl.c[pk].in_(ids))
+        res_sel = db.execute(stmt_sel)
+        cols = [c.name for c in tbl.columns]
+        has_image_url = "image_url" in cols
+        has_url_image = "url_image" in cols
+        has_proof = "proof_reference" in cols
+        for row in res_sel.fetchall():
+            m = row._mapping
             if t_lower == "users":
-                url = r.get("image_url") or r.get("url_image")
+                url = None
+                if has_image_url:
+                    url = m.get("image_url")
+                elif has_url_image:
+                    url = m.get("url_image")
                 if isinstance(url, str) and url.startswith(("http://", "https://")):
                     urls_to_delete.append(url)
-            elif t_lower == "transactions":
-                ref = r.get("proof_reference")
+            elif t_lower == "transactions" and has_proof:
+                ref = m.get("proof_reference")
                 if isinstance(ref, str) and ref.startswith(("http://", "https://")):
                     urls_to_delete.append(ref)
 
     # Delete rows
-    sql = f"DELETE FROM `{table}` WHERE `{pk}` IN ({placeholders})"
-
     try:
-        await cursor.execute(sql, tuple(ids))
-        await cursor.commit()
+        stmt_del = sqla_delete(tbl).where(tbl.c[pk].in_(ids))
+        res_del = db.execute(stmt_del)
+        db.commit()
     except Exception as e:
-        # MySQL FK constraint error typically 1451
         msg = str(e)
         if "1451" in msg or "foreign key constraint fails" in msg.lower():
             raise HTTPException(
@@ -267,9 +256,7 @@ async def delete_rows_endpoint(
                 detail="Suppression bloquée par une contrainte de clé étrangère. Supprimez d'abord les lignes dans les tables dépendantes (voir ordre de suppression).",
             )
         logger.exception("[admin_db] Delete failed")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Delete failed"
-        )
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Delete failed")
     # After successful DB deletion, best-effort delete AWS images
     if urls_to_delete:
         try:
@@ -285,4 +272,8 @@ async def delete_rows_endpoint(
             # Do not fail the endpoint if AWS setup has issues; just log
             logger.exception("[admin_db] AWS client initialization failed; skipping image deletions")
 
-    return {"deleted": cursor.rowcount}
+    try:
+        deleted_count = int(res_del.rowcount or 0)
+    except Exception:
+        deleted_count = 0
+    return {"deleted": deleted_count}

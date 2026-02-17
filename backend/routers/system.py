@@ -1,21 +1,39 @@
-from fastapi import APIRouter, Depends, HTTPException, status, WebSocket, WebSocketDisconnect
+from fastapi import (
+    APIRouter,
+    Depends,
+    HTTPException,
+    status,
+    WebSocket,
+    WebSocketDisconnect,
+)
 import logging
-from dependencies import get_db_connection, get_cursor, get_current_user, AsyncCursor
-from settings import settings
-from auth_utils import hash_password
+from sqlalchemy.orm import Session
 from jose import jwt, JWTError, ExpiredSignatureError
 import asyncio
 import psutil
-from datetime import datetime
+from datetime import datetime, date
+from settings import settings
+from auth_utils import hash_password
+from models_orm.database import SessionLocal
+from models_orm.dependencies import get_db, get_current_user
+from models_orm.users import Users
+from models_orm.access_control import Roles, RoleAttribution
+from models_orm.auth import RevokedToken
 
 router = APIRouter()
 logger = logging.getLogger("system")
 
+
 @router.get("/info-base")
-async def check_db(cursor = Depends(get_cursor), current_user: dict = Depends(get_current_user)):
-    await cursor.execute("SELECT DATABASE();")
-    row = await cursor.fetchone()
-    db_name = (row or {}).get("DATABASE()") if isinstance(row, dict) else (row[0] if row else None)
+async def check_db(
+    db: Session = Depends(get_db), current_user: Users = Depends(get_current_user)
+):
+    """Return environment and database connection info using ORM."""
+    try:
+        bind = db.get_bind()
+        db_name = getattr(getattr(bind, "url", None), "database", None)
+    except Exception:
+        db_name = None
     db_type = "production" if settings.env == "production" else "development"
     return {
         "env": settings.env,
@@ -38,10 +56,11 @@ async def memory_ws(websocket: WebSocket):
         return
 
     # Validate token and ensure admin role
-    conn = None
-    acursor: AsyncCursor | None = None
+    session: Session | None = None
     try:
-        payload = jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
+        payload = jwt.decode(
+            token, settings.jwt_secret, algorithms=[settings.jwt_algorithm]
+        )
         user_id_raw = payload.get("sub")
         jti = payload.get("jti")
         try:
@@ -52,26 +71,25 @@ async def memory_ws(websocket: WebSocket):
             await websocket.close(code=4401)
             return
 
-        conn = get_db_connection()
-        acursor = AsyncCursor(conn)
+        session = SessionLocal()
 
+        # Check token revocation by jti
         if jti:
-            await acursor.execute("SELECT id FROM revoked_tokens WHERE jti = %s", (jti,))
-            if await acursor.fetchone():
+            revoked = (
+                session.query(RevokedToken).filter(RevokedToken.jti == jti).first()
+            )
+            if revoked:
                 await websocket.close(code=4401)
                 return
 
-        await acursor.execute(
-            """
-            SELECT r.role
-            FROM role_attribution ra
-            JOIN roles r ON r.id = ra.roles_id
-            WHERE ra.users_id = %s
-            """,
-            (user_id,),
+        # Load roles via ORM
+        rows = (
+            session.query(Roles.role)
+            .join(RoleAttribution, Roles.id == RoleAttribution.roles_id)
+            .filter(RoleAttribution.users_id == user_id)
+            .all()
         )
-        rows = await acursor.fetchall() or []
-        roles = [str(r.get("role")).lower() for r in rows if r and r.get("role") is not None]
+        roles = [str(r.role).lower() for r in rows if getattr(r, "role", None)]
         if "admin" not in roles:
             await websocket.close(code=4403)  # Forbidden
             return
@@ -90,10 +108,8 @@ async def memory_ws(websocket: WebSocket):
         return
     finally:
         try:
-            if acursor:
-                await acursor.close()
-            elif conn:
-                conn.close()
+            if session:
+                session.close()
         except Exception:
             pass
 
@@ -165,7 +181,9 @@ async def memory_ws(websocket: WebSocket):
     try:
         recv_task = asyncio.create_task(recv_loop())
         send_task = asyncio.create_task(send_loop())
-        done, pending = await asyncio.wait({recv_task, send_task}, return_when=asyncio.FIRST_COMPLETED)
+        done, pending = await asyncio.wait(
+            {recv_task, send_task}, return_when=asyncio.FIRST_COMPLETED
+        )
         for task in pending:
             task.cancel()
     except Exception:
@@ -175,171 +193,141 @@ async def memory_ws(websocket: WebSocket):
         except Exception:
             pass
 
+
 @router.get("/setup-database")
-async def setup_database(cursor = Depends(get_cursor), current_user: dict = Depends(get_current_user)):
+async def setup_database(
+    db: Session = Depends(get_db), current_user: Users = Depends(get_current_user)
+):
+    """Seed initial data using ORM. Idempotent ensures existence without raw SQL."""
     try:
-        # Ensure transactional behavior
-        try:
-            # Disable autocommit for this transactional route
-            cursor._conn.autocommit = False
-        except Exception:
-            pass
+        # Ensure users
+        def ensure_user(uid: int, **fields):
+            u = db.query(Users).filter(Users.id == uid).first()
+            if not u:
+                u = Users(id=uid, **fields)
+                db.add(u)
+                db.flush()
+            return u
 
-        # Insert father (ID 1)
-        sql_father = (
-            "INSERT INTO users (id, firstname, lastname, username, password, isfirstlogin) "
-            "VALUES (1, %s, %s, %s, %s, %s) "
-            "ON DUPLICATE KEY UPDATE id=id"
-        )
-        await cursor.execute(
-            sql_father,
-            (
-                "Kassa",
-                "Famille",
-                "kassa",
-                hash_password(settings.user_password_default),
-                0,
-            ),
-        )
+        # Parse birthday if provided
+        def parse_bday(val):
+            if not val:
+                return None
+            try:
+                # Expect YYYY-MM-DD
+                parts = str(val).split("-")
+                return date(int(parts[0]), int(parts[1]), int(parts[2]))
+            except Exception:
+                return None
 
-        # Insert admin (ID 2)
-        sql_admin = (
-            "INSERT INTO users (id, firstname, lastname, username, password, email, telephone, birthday, isfirstlogin, isactive) "
-            "VALUES (2, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
-            "ON DUPLICATE KEY UPDATE id=id"
-        )
-        await cursor.execute(
-            sql_admin,
-            (
-                "admin",
-                "admin",
-                settings.admin_username,
-                hash_password(settings.admin_password),
-                settings.admin_email,
-                settings.admin_telephone,
-                settings.admin_birthday,
-                0,
-                1,
-            ),
+        ensure_user(
+            1,
+            firstname="Kassa",
+            lastname="Famille",
+            username="kassa",
+            password=hash_password(settings.user_password_default),
+            isfirstlogin=0,
+            isactive=1,
         )
 
-        children = [
-            (
-                3,
-                "Thierno Mamoudou Foulah",
-                "Barry",
-                "thierno",
-                hash_password(settings.user_password_default),
-                1,
-                0,
-            ),
-            (
-                4,
-                "Mamadou Kindy",
-                "Barry",
-                "mamadou",
-                hash_password(settings.user_password_default),
-                1,
-                0,
-            ),
-        ]
-        sql_child = (
-            "INSERT INTO users (id, firstname, lastname, username, password, id_father, isfirstlogin) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s) ON DUPLICATE KEY UPDATE id=id"
+        ensure_user(
+            2,
+            firstname="admin",
+            lastname="admin",
+            username=settings.admin_username,
+            password=hash_password(settings.admin_password),
+            email=settings.admin_email,
+            telephone=settings.admin_telephone,
+            birthday=parse_bday(settings.admin_birthday),
+            isfirstlogin=0,
+            isactive=1,
         )
-        # executemany is blocking; run in threadpool
-        await asyncio.to_thread(cursor._cursor.executemany, sql_child, children)
 
-        # Roles
-        await cursor.execute(
-            "INSERT INTO roles (id, role) VALUES (1, 'admin') "
-            "ON DUPLICATE KEY UPDATE role='admin'"
+        ensure_user(
+            3,
+            firstname="Thierno Mamoudou Foulah",
+            lastname="Barry",
+            username="thierno",
+            password=hash_password(settings.user_password_default),
+            isfirstlogin=0,
+            isactive=1,
         )
-        await cursor.execute(
-            "INSERT INTO roles (id, role) VALUES (2, 'user') "
-            "ON DUPLICATE KEY UPDATE role='user'"
+        ensure_user(
+            4,
+            firstname="Mamadou Kindy",
+            lastname="Barry",
+            username="mamadou",
+            password=hash_password(settings.user_password_default),
+            isfirstlogin=0,
+            isactive=1,
         )
-        await cursor.execute(
-            "INSERT INTO roles (id, role) VALUES (3, 'guest') "
-            "ON DUPLICATE KEY UPDATE role='guest'"
-        )
-        await cursor.execute(
-            "INSERT INTO roles (id, role) VALUES (4, 'norole') "
-            "ON DUPLICATE KEY UPDATE role='norole'"
-        )
-        await cursor.execute(
-            "INSERT INTO roles (id, role) VALUES (5, 'admingroup') "
-            "ON DUPLICATE KEY UPDATE role='admingroup'"
-        )
+
+        # Roles ensure
+        def ensure_role(rid: int, name: str):
+            r = db.query(Roles).filter(Roles.id == rid).first()
+            if not r:
+                r = Roles(id=rid, role=name)
+                db.add(r)
+            else:
+                r.role = name
+            db.flush()
+            return r
+
+        ensure_role(1, "admin")
+        ensure_role(2, "user")
+        ensure_role(3, "guest")
+        ensure_role(4, "norole")
+        ensure_role(5, "admingroup")
 
         # Create users for each role
-        # Guest user (ID 5)
-        sql_role_user = (
-            "INSERT INTO users (id, firstname, lastname, username, password, isfirstlogin) "
-            "VALUES (%s, %s, %s, %s, %s, %s) ON DUPLICATE KEY UPDATE id=id"
+        ensure_user(
+            5,
+            firstname="Guest",
+            lastname="User",
+            username="guest",
+            password=hash_password(settings.user_password_default),
+            isfirstlogin=0,
+            isactive=1,
         )
-        await cursor.execute(
-            sql_role_user,
-            (
-                5,
-                "Guest",
-                "User",
-                "guest",
-                hash_password(settings.user_password_default),
-                0,
-            ),
-        )
-        # Norole user (ID 6)
-        await cursor.execute(
-            sql_role_user,
-            (
-                6,
-                "No",
-                "Role",
-                "norole",
-                hash_password(settings.user_password_default),
-                0,
-            ),
+        ensure_user(
+            6,
+            firstname="No",
+            lastname="Role",
+            username="norole",
+            password=hash_password(settings.user_password_default),
+            isfirstlogin=0,
+            isactive=1,
         )
 
-        # Role assignments
-        # Admin gets everything
+        # Role assignments (idempotent)
+        def ensure_role_attrib(uid: int, rid: int):
+            exists = (
+                db.query(RoleAttribution)
+                .filter(RoleAttribution.users_id == uid)
+                .filter(RoleAttribution.roles_id == rid)
+                .first()
+            )
+            if not exists:
+                db.add(RoleAttribution(users_id=uid, roles_id=rid))
+                db.flush()
+
+        # Admin gets admin,user,guest
         for rid in (1, 2, 3):
-            await cursor.execute(
-                "INSERT IGNORE INTO role_attribution (users_id, roles_id) VALUES (2, %s)",
-                (rid,),
-            )
+            ensure_role_attrib(2, rid)
 
-        # No user add norole for kassa, father and mother
+        # Norole for kassa (1), child 3 and 4
         for uid in (1, 3, 4):
-            await cursor.execute(
-                "INSERT IGNORE INTO role_attribution (users_id, roles_id) VALUES (%s, 4)",
-                (uid,),
-            )
+            ensure_role_attrib(uid, 4)
 
-        # Guest gets guest role
-        await cursor.execute(
-            "INSERT IGNORE INTO role_attribution (users_id, roles_id) VALUES (5, 3)"
-        )
+        # Guest gets guest
+        ensure_role_attrib(5, 3)
+        # Norole gets norole
+        ensure_role_attrib(6, 4)
 
-        # Norole gets norole role
-        await cursor.execute(
-            "INSERT IGNORE INTO role_attribution (users_id, roles_id) VALUES (6, 4)"
-        )
-
-        await cursor.commit()
-
+        db.commit()
         return {"status": "Success", "message": "Ensure initial data exists"}
-    
     except Exception as e:
-        try:
-            await cursor.rollback()
-        except Exception:
-            pass
         logger.exception("[system] setup_database failed")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
-    finally:
-        try:
-            await cursor.close()
-        except Exception:
-            pass
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
+        )

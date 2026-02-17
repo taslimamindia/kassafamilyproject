@@ -1,11 +1,61 @@
 import { useState, useRef, useEffect, useLayoutEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
+import i18n from '@src/i18n'
 import { getMessages, markMessageRead, markAllMessagesRead, getUserMessageInfo } from '@src/services/messages'
 import { getCurrentUser } from '@src/services/users'
 import './Notification.css'
 import Chat from './Chat'
 import Modal from '../common/Modal'
+
+const notificationResources = {
+    fr: {
+        notifications: {
+            view: 'Voir',
+            menu: 'Notifications',
+            header: 'Notifications',
+            new: 'Nouveau message',
+            markAllRead: 'Marquer lues',
+            none: 'Aucun message',
+            viewAll: 'Voir toutes',
+            received: 'Reçu',
+            sender: 'Expéditeur',
+            receiver: 'Destinataire'
+        }
+    },
+    en: {
+        notifications: {
+            view: 'View',
+            menu: 'Notifications',
+            header: 'Notifications',
+            new: 'New message',
+            markAllRead: 'Mark as read',
+            none: 'No messages',
+            viewAll: 'View all',
+            received: 'Received',
+            sender: 'Sender',
+            receiver: 'Recipient'
+        }
+    },
+    ar: {
+        notifications: {
+            view: 'عرض',
+            menu: 'الإشعارات',
+            header: 'الإشعارات',
+            new: 'رسالة جديدة',
+            markAllRead: 'تحديد كمقروءة',
+            none: 'لا توجد رسائل',
+            viewAll: 'عرض الكل',
+            received: 'تم الاستلام',
+            sender: 'المرسل',
+            receiver: 'المستلم'
+        }
+    }
+}
+
+for (const [lng, res] of Object.entries(notificationResources)) {
+    i18n.addResourceBundle(lng, 'translation', res as any, true, false)
+}
 
 type Message = {
 	id: string

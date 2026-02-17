@@ -69,7 +69,7 @@ ENGINE = InnoDB;
 -- Table `database_kassa`.`roles`
 -- -----------------------------------------------------
 CREATE TABLE IF NOT EXISTS `database_kassa`.`roles` (
-  `id` INT NOT NULL,
+  `id` INT NOT NULL AUTO_INCREMENT,
   `role` VARCHAR(20) NULL,
   PRIMARY KEY (`id`))
 ENGINE = InnoDB;
@@ -204,7 +204,7 @@ ENGINE = InnoDB;
 -- Table `database_kassa`.`messages_recipients`
 -- -----------------------------------------------------
 CREATE TABLE IF NOT EXISTS `database_kassa`.`messages_recipients` (
-  `id` INT NOT NULL,
+  `id` INT NOT NULL AUTO_INCREMENT,
   `isreaded` TINYINT NOT NULL,
   `sender_id` INT NOT NULL,
   `receiver_id` INT NOT NULL,
@@ -235,7 +235,7 @@ ENGINE = InnoDB;
 -- Table `database_kassa`.`family_assignation`
 -- -----------------------------------------------------
 CREATE TABLE IF NOT EXISTS `database_kassa`.`family_assignation` (
-  `id` INT NOT NULL,
+  `id` INT NOT NULL AUTO_INCREMENT,
   `users_assigned_id` INT NOT NULL,
   `users_responsable_id` INT NOT NULL,
   PRIMARY KEY (`id`),

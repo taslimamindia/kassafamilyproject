@@ -7,26 +7,29 @@
     "dev": "vite --host",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "vitest",
+    "test:run": "vitest run",
+    "test:ui": "vitest --ui"
   },
   "dependencies": {
     "@xyflow/react": "^12.10.0",
+    "axios": "^1.7.9",
     "bootstrap": "^5.3.8",
     "bootstrap-icons": "^1.13.1",
     "dagre": "^0.8.5",
-    "axios": "^1.7.9",
     "i18next": "^25.7.4",
     "i18next-browser-languagedetector": "^8.2.0",
     "libphonenumber-js": "^1.12.33",
     "react": "^19.2.3",
     "react-dom": "^19.2.3",
     "react-i18next": "^16.5.1",
-    "recharts": "^2.13.3",
     "react-phone-number-input": "^3.4.14",
     "react-router-dom": "^7.11.0",
     "react-select": "^5.10.2",
     "react-toastify": "^10.0.6",
-    "reactflow": "^11.11.4"
+    "reactflow": "^11.11.4",
+    "recharts": "^2.13.3"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",
@@ -39,8 +42,10 @@
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.4.24",
     "globals": "^16.5.0",
+    "jsdom": "^26.1.0",
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.46.4",
-    "vite": "^7.2.4"
+    "vite": "^7.2.4",
+    "vitest": "^2.1.9"
   }
 }

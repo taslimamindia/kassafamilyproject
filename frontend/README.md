@@ -7,6 +7,36 @@ npm install
 npm run dev
 ```
 
+## Tests frontend (services)
+
+Les tests vérifient la logique des services sans modifier le code existant.
+
+- Lancer tous les tests unitaires:
+
+```bash
+npm run test:run
+```
+
+- Lancer l'UI vitest (facultatif):
+
+```bash
+npm run test:ui
+```
+
+### Tests d'intégration (optionnels)
+
+Des tests d'authentification peuvent pointer sur le backend réel défini par `VITE_API_BASE_URL`.
+Ils sont ignorés par défaut. Pour les activer, exportez des identifiants valides:
+
+```bash
+# Windows PowerShell
+$env:TEST_IDENTIFIER="mon_utilisateur"
+$env:TEST_PASSWORD="mon_mot_de_passe"
+npm run test:run
+```
+
+Si ces tests échouent, la correction doit être faite côté backend (et non dans le frontend).
+
 ---
 
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.

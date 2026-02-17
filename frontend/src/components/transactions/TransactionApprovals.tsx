@@ -1,10 +1,216 @@
 import { useEffect, useState } from 'react'
 import { toast } from 'react-toastify'
 import { useTranslation } from 'react-i18next'
+import i18n from '../../i18n'
 import { listTransactions, approveTransaction, rejectTransaction, type Transaction } from '../../services/transactions'
 import { getCurrentUser, type User } from '../../services/users'
 import './TransactionApprovals.css'
 import Modal from '../common/Modal'
+
+const approvalsResources = {
+    fr: {
+        approvals: {
+            title: 'Validations en attente',
+            selectAll: 'Sélectionner tout',
+            approveSelection: 'Approuver la sélection ({{count}})',
+            nonePending: 'Aucune transaction en attente de votre validation.',
+            thDate: 'Date',
+            thUser: 'Utilisateur',
+            thInitiatedBy: 'Enr. par',
+            thAmount: 'Montant',
+            thType: 'Type',
+            thPayment: 'Moyen de paiement',
+            thProof: 'Preuve',
+            thStatus: 'Statut actuel',
+            thApprovals: 'Approbations',
+            thActions: 'Actions',
+            actions: {
+                view: 'Consulter',
+                viewProof: 'Voir la preuve',
+                reject: 'Rejeter',
+                approve: 'Valider',
+                approveTitle: 'Approuver cette transaction',
+                rejectTitle: 'Rejeter cette transaction'
+            },
+            modals: {
+                rejectTitle: 'Rejeter la transaction',
+                rejectReason: 'Veuillez indiquer le motif du rejet. Ce motif sera enregistré et visible. (Max 100 mots)',
+                rejectPlaceholder: 'Motif du rejet...',
+                confirmReject: 'Confirmer le rejet',
+                confirmBatchTitle: 'Confirmer la validation',
+                confirmBatchBody: 'Vous êtes sur le point de valider <strong>{{count}}</strong> transaction(s).',
+                confirmBatchSub: 'Ceci enregistrera votre approbation pour ces transactions.',
+                confirmBatchAction: 'Confirmer la validation',
+                viewProofTitle: 'Preuve de transaction',
+                viewProofOpen: 'Ouvrir l\'original'
+            },
+            errors: {
+                reasonRequired: 'Veuillez indiquer le motif du rejet',
+                tooLong: 'Le motif est trop long ({{count}} mots). Maximum 100 mots.',
+                rejectFailed: 'Une erreur est survenue lors du rejet',
+                approveFailed: 'Une erreur est survenue lors de l’approbation'
+            },
+            success: {
+                approved: 'Transaction(s) approuvée(s) avec succès'
+            }
+        },
+        common: {
+             close: 'Fermer',
+             cancel: 'Annuler',
+             confirm: 'Confirmer',
+             loading: 'Chargement...'
+        },
+        transactionTypes: {
+            COTISATION: 'Cotisation',
+            DONS: 'Dons',
+            DEPENSE: 'Dépense',
+            EXPENSE: 'Dépense'
+        },
+        transactionStatus: {
+            SAVED: 'Brouillon',
+            PENDING: 'En attente',
+            PARTIALLY_APPROVED: 'Part. Approuvé',
+            VALIDATED: 'Validé',
+            REJECTED: 'Rejeté'
+        }
+    },
+    en: {
+        approvals: {
+            title: 'Pending Approvals',
+            selectAll: 'Select All',
+            approveSelection: 'Approve Selected ({{count}})',
+            nonePending: 'No transactions pending your approval.',
+            thDate: 'Date',
+            thUser: 'User',
+            thInitiatedBy: 'Rec. by',
+            thAmount: 'Amount',
+            thType: 'Type',
+            thPayment: 'Payment Method',
+            thProof: 'Proof',
+            thStatus: 'Current Status',
+            thApprovals: 'Approvals',
+            thActions: 'Actions',
+            actions: {
+                view: 'View',
+                viewProof: 'View proof',
+                reject: 'Reject',
+                approve: 'Approve',
+                approveTitle: 'Approve this transaction',
+                rejectTitle: 'Reject this transaction'
+            },
+             modals: {
+                rejectTitle: 'Reject Transaction',
+                rejectReason: 'Please provide a rejection reason. This will be recorded and visible. (Max 100 words)',
+                rejectPlaceholder: 'Rejection reason...',
+                confirmReject: 'Confirm Rejection',
+                confirmBatchTitle: 'Confirm Approval',
+                confirmBatchBody: 'You are about to approve <strong>{{count}}</strong> transaction(s).',
+                confirmBatchSub: 'This will record your approval for these transactions.',
+                confirmBatchAction: 'Confirm Approval',
+                viewProofTitle: 'Transaction Proof',
+                viewProofOpen: 'Open Original'
+            },
+            errors: {
+                reasonRequired: 'Please provide a rejection reason',
+                tooLong: 'Reason is too long ({{count}} words). Max 100 words.',
+                rejectFailed: 'Error occurred while rejecting',
+                approveFailed: 'Error occurred while approving'
+            },
+            success: {
+                approved: 'Transaction(s) approved successfully'
+            }
+        },
+        common: {
+             close: 'Close',
+             cancel: 'Cancel',
+             confirm: 'Confirm',
+             loading: 'Loading...'
+        },
+        transactionTypes: {
+            COTISATION: 'Contribution',
+            DONS: 'Donation',
+            DEPENSE: 'Expense',
+            EXPENSE: 'Expense'
+        },
+        transactionStatus: {
+            SAVED: 'Draft',
+            PENDING: 'Pending',
+            PARTIALLY_APPROVED: 'Part. Approved',
+            VALIDATED: 'Validated',
+            REJECTED: 'Rejected'
+        }
+    },
+    ar: {
+        approvals: {
+            title: 'الموافقات المعلقة',
+            selectAll: 'تحديد الكل',
+            approveSelection: 'الموافقة على المحدد ({{count}})',
+            nonePending: 'لا توجد معاملات بانتظار موافقتك.',
+            thDate: 'التاريخ',
+            thUser: 'المستخدم',
+            thInitiatedBy: 'سجلها',
+            thAmount: 'المبلغ',
+            thType: 'النوع',
+            thPayment: 'طريقة الدفع',
+            thProof: 'الإثبات',
+            thStatus: 'الحالة الحالية',
+            thApprovals: 'الموافقات',
+            thActions: 'إجراءات',
+             actions: {
+                view: 'عرض',
+                viewProof: 'عرض الإثبات',
+                reject: 'رفض',
+                approve: 'موافقة',
+                approveTitle: 'الموافقة على هذه المعاملة',
+                rejectTitle: 'رفض هذه المعاملة'
+            },
+             modals: {
+                rejectTitle: 'رفض المعاملة',
+                rejectReason: 'يرجى تقديم سبب الرفض. سيتم تسجيل هذا السبب ويكون مرئياً. (الحد الأقصى 100 كلمة)',
+                rejectPlaceholder: 'سبب الرفض...',
+                confirmReject: 'تأكيد الرفض',
+                confirmBatchTitle: 'تأكيد الموافقة',
+                confirmBatchBody: 'أنت على وشك الموافقة على <strong>{{count}}</strong> معاملة.',
+                confirmBatchSub: 'سيتم تسجيل موافقتك على هذه المعاملات.',
+                confirmBatchAction: 'تأكيد الموافقة',
+                viewProofTitle: 'إثبات المعاملة',
+                viewProofOpen: 'فتح الأصل'
+            },
+            errors: {
+                reasonRequired: 'يرجى تقديم سبب الرفض',
+                tooLong: 'السبب طويل جداً ({{count}} كلمة). الحد الأقصى 100 كلمة.',
+                rejectFailed: 'حدث خطأ أثناء الرفض',
+                approveFailed: 'حدث خطأ أثناء الموافقة'
+            },
+            success: {
+                approved: 'تمت الموافقة بنجاح'
+            }
+        },
+        common: {
+             close: 'إغلاق',
+             cancel: 'إلغاء',
+             confirm: 'تأكيد',
+             loading: 'جار التحميل...'
+        },
+        transactionTypes: {
+            COTISATION: 'مساهمة',
+            DONS: 'تبرعات',
+            DEPENSE: 'نفقة',
+            EXPENSE: 'نفقة'
+        },
+        transactionStatus: {
+            SAVED: 'مسودة',
+            PENDING: 'قيد الانتظار',
+            PARTIALLY_APPROVED: 'موافق عليه جزئياً',
+            VALIDATED: 'تم التحقق',
+            REJECTED: 'مرفوض'
+        }
+    }
+}
+
+for (const [lng, res] of Object.entries(approvalsResources)) {
+    i18n.addResourceBundle(lng, 'translation', res as any, true, false)
+}
 
 // Helper to determine if a user has a specific role
 const hasRole = (user: User | null, role: string) => {
@@ -101,14 +307,14 @@ export default function TransactionApprovals() {
     const confirmReject = async () => {
         if (!rejectTxId) return
         if (!rejectReason.trim()) {
-            toast.error("Veuillez indiquer le motif du rejet")
+            toast.error(t('approvals.errors.reasonRequired'))
             return
         }
 
         // Word count check
         const words = rejectReason.trim().split(/\s+/)
         if (words.length > 100) {
-            toast.error(`Le motif est trop long (${words.length} mots). Maximum 100 mots.`)
+            toast.error(t('approvals.errors.tooLong', { count: words.length }))
             return
         }
 
@@ -124,7 +330,7 @@ export default function TransactionApprovals() {
             setRejectModalOpen(false)
         } catch (e) {
             console.error("Rejection failed", e)
-            toast.error("Une erreur est survenue lors du rejet")
+            toast.error(t('approvals.errors.rejectFailed'))
         } finally {
             setApproving(false)
         }
@@ -180,7 +386,7 @@ export default function TransactionApprovals() {
 
         } catch (e) {
             console.error("Approval failed", e)
-            toast.error("Une erreur est survenue lors de la validation")
+            toast.error(t('approvals.errors.approveFailed'))
         } finally {
             setApproving(false)
         }
@@ -199,13 +405,13 @@ export default function TransactionApprovals() {
         <div className="container py-4">
             <div className="d-flex justify-content-between align-items-center mb-4">
                 <div>
-                    <h2 className="mb-1">Validations</h2>
+                    <h2 className="mb-1">{t('approvals.title')}</h2>
                     <p className="text-muted small mb-0">
                         {hasRole(currentUser, 'treasury') && hasRole(currentUser, 'board')
-                            ? "Vue Trésorerie & Conseil d'Administration"
+                            ? t('approvals.view.treasuryBoard', "Vue Trésorerie & Conseil d'Administration")
                             : hasRole(currentUser, 'treasury')
-                                ? "Vue Trésorerie"
-                                : "Vue Conseil d'Administration"}
+                                ? t('approvals.view.treasury', "Vue Trésorerie")
+                                : t('approvals.view.board', "Vue Conseil d'Administration")}
                     </p>
                 </div>
                 <div>
@@ -216,7 +422,7 @@ export default function TransactionApprovals() {
                             disabled={approving}
                         >
                             {approving ? <span className="spinner-border spinner-border-sm me-2"></span> : <i className="bi bi-check-all me-2"></i>}
-                            Valider la sélection ({selectedIds.size})
+                            {t('approvals.approveSelection', { count: selectedIds.size })}
                         </button>
                     )}
                 </div>

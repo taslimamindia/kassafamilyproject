@@ -16,4 +16,13 @@ export default defineConfig({
       '@assets': path.resolve(__dirname, './src/assets'),
     },
   },
+  test: {
+    environment: 'jsdom',
+    globals: true,
+    setupFiles: ['src/test/setup.ts'],
+    include: ['src/**/*.test.{ts,tsx}','src/**/__tests__/**/*.{ts,tsx}'],
+    coverage: {
+      reporter: ['text', 'html'],
+    },
+  },
 })
