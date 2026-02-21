@@ -341,3 +341,49 @@
         max-height: none;
     }
 }
+
+/* Mobile portrait tweaks: reduce card / section spacing */
+@media (max-width: 575.98px) {
+    .add-transaction-page {
+        padding-top: 0.75rem;
+        padding-bottom: 0.75rem;
+    }
+
+    .add-transaction-page .card {
+        margin-left: -0.75rem;
+        margin-right: -0.75rem;
+        border-radius: 0.5rem;
+    }
+
+    .add-transaction-page .card-body {
+        padding-top: 0.85rem;
+        padding-bottom: 0.85rem;
+        padding-left: 0.9rem;
+        padding-right: 0.9rem;
+    }
+
+    .add-transaction-page .card-footer {
+        padding-top: 0.6rem;
+        padding-bottom: 0.7rem;
+        padding-left: 0.9rem;
+        padding-right: 0.9rem;
+    }
+
+    .add-transaction-page .form-section {
+        background: transparent;
+        border: none;
+        border-radius: 0;
+        padding: 0.4rem 0 0.3rem;
+    }
+
+    .add-transaction-page .proof-card {
+        margin-top: 0.25rem;
+        padding: 0.6rem 0.75rem 0.8rem;
+        border-radius: 0.6rem;
+    }
+
+    .add-transaction-page .row > [class^="col"],
+    .add-transaction-page .row > [class*=" col"] {
+        margin-bottom: 0.4rem;
+    }
+}

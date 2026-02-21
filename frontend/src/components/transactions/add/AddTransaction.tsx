@@ -395,12 +395,12 @@ export default function AddTransaction({ onSuccess, onCancel }: { onSuccess?: ()
         return <div className="p-5 text-center"><div className="spinner-border text-primary" role="status"></div></div>
     }
 
-    return (
-        <div className="container py-3">
+        return (
+		<div className="container py-3 add-transaction-page">
             <h2 className="h5 mb-3">{t('transactions.add.title')}</h2>
             <form className="card" onSubmit={onSubmit} noValidate>
                 <div className="card-body">
-                    <div className="row g-3">
+                    <div className="row">
                         {canChooseMember && (
                             <div className="col-12 form-section member-select-section">
                                 <label className="form-label label-with-icon">
