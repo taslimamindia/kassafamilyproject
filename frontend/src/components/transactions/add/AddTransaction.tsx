@@ -17,10 +17,12 @@ const addTransactionResources = {
                 member: 'Membre',
                 meBadge: 'Moi',
                 memberHelp: 'Choisissez le membre concerné',
+                membersLabel: 'Membres concernés',
                 selectMember: 'Sélectionner un membre',
                 amount: 'Montant',
                 amountHelp: 'Saisissez le montant en GNF. Le rang indique la grandeur (Centaines, Milliers, etc.).',
                 amountPlaceholder: 'Ex: 50 000',
+                amountPerMemberPlaceholder: 'Montant pour ce membre',
                 currency: 'Devise: Franc Guinéen (GNF)',
                 type: 'Type',
                 typeHelp: 'Choisissez le type de transaction (Cotisation, Dépense, etc.).',
@@ -48,10 +50,12 @@ const addTransactionResources = {
                 member: 'Member',
                 meBadge: 'Me',
                 memberHelp: 'Choose the concerned member',
+                membersLabel: 'Members',
                 selectMember: 'Select a member',
                 amount: 'Amount',
                 amountHelp: 'Enter amount in GNF.',
                 amountPlaceholder: 'Ex: 50,000',
+                amountPerMemberPlaceholder: 'Amount for this member',
                 currency: 'Currency: Guinean Franc (GNF)',
                 type: 'Type',
                 typeHelp: 'Choose transaction type',
@@ -79,10 +83,12 @@ const addTransactionResources = {
                 member: 'العضو',
                 meBadge: 'أنا',
                 memberHelp: 'اختر العضو المعني',
+                membersLabel: 'الأعضاء',
                 selectMember: 'اختر عضواً',
                 amount: 'المبلغ',
                 amountHelp: 'أدخل المبلغ بـ GNF.',
                 amountPlaceholder: 'مثال: 50,000',
+                amountPerMemberPlaceholder: 'المبلغ لهذا العضو',
                 currency: 'العملة: فرنك غيني (GNF)',
                 type: 'النوع',
                 typeHelp: 'اختر نوع المعاملة',
@@ -116,9 +122,12 @@ export default function AddTransaction({ onSuccess, onCancel }: { onSuccess?: ()
     const { t, i18n } = useTranslation()
 
     const [users, setUsers] = useState<User[]>([])
+    const [allUsers, setAllUsers] = useState<User[]>([])
     const [methods, setMethods] = useState<PaymentMethod[]>([])
 
     const [users_id, setUsersId] = useState<number | ''>('')
+    const [selectedMembers, setSelectedMembers] = useState<{ userId: number; amount: string }[]>([])
+    const [membersOpen, setMembersOpen] = useState(false)
     const [payment_methods_id, setPaymentMethodId] = useState<number | ''>('')
     const [amount, setAmount] = useState<string>('')
     const [kind, setKind] = useState<TransactionKind | ''>('') // force explicit selection
@@ -147,11 +156,16 @@ export default function AddTransaction({ onSuccess, onCancel }: { onSuccess?: ()
                     setMe({ ...current, roles: myRoles as any })
                     setMethods(pms)
                     if (canChooseMember) {
-                        // Load only active members; backend enforces scope by role
+                        // Load active members for selection and all users for parent lookup
                         getUsers({ status: 'active', roles: 'member' })
-                            .then(list => { setUsers(list) })
+                            .then(list => {
+                                setUsers(list)
+                                return getUsers({ status: 'all' })
+                            })
+                            .then(all => { setAllUsers(all) })
                             .catch((err) => { console.error('[AddTransaction] users load failed', err) })
                     } else {
+                        // Single-member mode: current user only
                         setUsersId(current.id)
                     }
                 }
@@ -170,32 +184,65 @@ export default function AddTransaction({ onSuccess, onCancel }: { onSuccess?: ()
         // Validate proof according to method's type_of_proof and chosen proofType when BOTH
         const isLinkType = pmType === 'LINK' || (pmType === 'BOTH' && proofType === 'LINK')
         const proofOk = isLinkType ? !!proof_file : !!proof_reference
-        if (!users_id || !payment_methods_id || !amount || !kind || !proofOk) {
+
+        if (!payment_methods_id || !kind || !proofOk) {
             toast.error(t('transactions.add.requiredFields'))
             return
         }
+
         const { transaction_type } = mapKindToBackend(kind as TransactionKind)
+        const isMultiMemberMode = (() => {
+            const roles = (me?.roles || []).map(r => (r.role || '').toLowerCase())
+            return roles.includes('admingroup') || roles.includes('treasury')
+        })()
+
+        if (isMultiMemberMode) {
+            if (selectedMembers.length === 0) {
+                toast.error(t('transactions.add.requiredFields'))
+                return
+            }
+            const invalid = selectedMembers.filter(m => !m.amount || !isFinite(Number(m.amount)) || Number(m.amount) <= 0)
+            if (invalid.length > 0) {
+                toast.error(t('transactions.add.requiredFields'))
+                return
+            }
+        } else {
+            if (!users_id || !amount || !isFinite(Number(amount)) || Number(amount) <= 0) {
+                toast.error(t('transactions.add.requiredFields'))
+                return
+            }
+        }
+
         setLoading(true)
         try {
+            let uploadedUrl: string | null = null
             if (isLinkType && proof_file) {
-                // Upload image first to get deterministic URL, then create transaction with that URL
+                // Upload image first to get deterministic URL
                 const uploaded = await uploadTransactionProof(proof_file)
-                await createTransaction({
-                    amount: Number(amount),
-                    payment_methods_id: Number(payment_methods_id),
-                    users_id: Number(users_id),
-                    transaction_type,
-                    proof_reference: uploaded.url,
-                    issubmitted: sendToTreasury ? 1 : 0,
-                })
+                uploadedUrl = uploaded.url
+            }
+
+            const basePayload = {
+                payment_methods_id: Number(payment_methods_id),
+                transaction_type,
+                issubmitted: sendToTreasury ? 1 : 0,
+            }
+
+            if (isMultiMemberMode) {
+                for (const member of selectedMembers) {
+                    await createTransaction({
+                        ...basePayload,
+                        amount: Number(member.amount),
+                        users_id: member.userId,
+                        proof_reference: isLinkType ? (uploadedUrl as string) : proof_reference,
+                    })
+                }
             } else {
                 await createTransaction({
+                    ...basePayload,
                     amount: Number(amount),
-                    payment_methods_id: Number(payment_methods_id),
                     users_id: Number(users_id),
-                    transaction_type,
-                    proof_reference: proof_reference,
-                    issubmitted: sendToTreasury ? 1 : 0,
+                    proof_reference: isLinkType ? (uploadedUrl as string) : proof_reference,
                 })
             }
             toast.success(t('transactions.add.createdSuccess'))
@@ -240,9 +287,10 @@ export default function AddTransaction({ onSuccess, onCancel }: { onSuccess?: ()
             canChooseMember,
             usersCount: users.length,
             selectedUserId: users_id || null,
+            selectedMembers: selectedMembers.map(m => ({ userId: m.userId, amount: m.amount })),
             paymentMethodId: payment_methods_id || null,
         })
-    }, [me, users, canChooseMember, users_id, payment_methods_id])
+    }, [me, users, canChooseMember, users_id, payment_methods_id, selectedMembers])
 
     useEffect(() => {
         if (!allowExpense && kind === 'DEPENSE') {
@@ -307,6 +355,33 @@ export default function AddTransaction({ onSuccess, onCancel }: { onSuccess?: ()
         }
     }
 
+    // Multi-member helpers
+    function toggleMemberSelection(userId: number) {
+        setSelectedMembers(prev => {
+            const exists = prev.find(m => m.userId === userId)
+            if (exists) {
+                return prev.filter(m => m.userId !== userId)
+            }
+            return [...prev, { userId, amount: '' }]
+        })
+    }
+
+    function updateMemberAmount(userId: number, rawInput: string) {
+        const cleaned = rawInput.replace(/[\s,]/g, '')
+        const normalized = normalizeAmountInput(cleaned)
+        setSelectedMembers(prev => prev.map(m => m.userId === userId ? { ...m, amount: normalized } : m))
+    }
+
+    function handleSelectMeAsMember() {
+        if (!me) return
+        setSelectedMembers(prev => {
+            const exists = prev.find(m => m.userId === me.id)
+            if (exists) return prev
+            return [...prev, { userId: me.id, amount: '' }]
+        })
+        setMembersOpen(true)
+    }
+
 
     const amountNumber = amount ? Number(amount) : 0
     const magnitude = getMagnitudeLabel(amountNumber)
@@ -327,17 +402,17 @@ export default function AddTransaction({ onSuccess, onCancel }: { onSuccess?: ()
                 <div className="card-body">
                     <div className="row g-3">
                         {canChooseMember && (
-                            <div className="col-md-6 form-section">
+                            <div className="col-12 form-section member-select-section">
                                 <label className="form-label label-with-icon">
                                     <span className="label-icon" aria-hidden>
                                         <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><path d="M12 12c2.761 0 5-2.239 5-5s-2.239-5-5-5-5 2.239-5 5 2.239 5 5 5zm0 2c-3.866 0-7 2.239-7 5v2h14v-2c0-2.761-3.134-5-7-5z" /></svg>
                                     </span>
-                                    {t('transactions.add.member')}
+                                    {t('transactions.add.membersLabel')}
                                     {me && (
                                         <span
                                             className="badge bg-secondary ms-2" role="button"
                                             title={t('transactions.add.meBadge', 'Moi')}
-                                            onClick={() => setUsersId(me.id)}
+                                            onClick={handleSelectMeAsMember}
                                         >{t('transactions.add.meBadge', 'Moi')}</span>
                                     )}
                                     <span className="help-dot" title={t('transactions.add.memberHelp', 'Choisissez le membre concerné')}>
@@ -345,15 +420,100 @@ export default function AddTransaction({ onSuccess, onCancel }: { onSuccess?: ()
                                         <span className="help-tooltip">{t('transactions.add.memberHelp', 'Choisissez le membre concerné')}</span>
                                     </span>
                                 </label>
-                                <select className="form-select" value={users_id} onChange={e => setUsersId(e.target.value ? Number(e.target.value) : '')} required>
-                                    <option value="">{t('transactions.add.selectMember')}</option>
-                                    {users.map(u => (
-                                        <option key={u.id} value={u.id}>{u.firstname} {u.lastname} ({u.username})</option>
-                                    ))}
-                                </select>
+                                <div className="member-select-dropdown">
+                                    <div className="member-select-header">
+                                        <button
+                                            type="button"
+                                            className={`member-select-trigger ${membersOpen ? 'member-select-trigger-open' : ''}`}
+                                            onClick={() => setMembersOpen(o => !o)}
+                                        >
+                                            <span className="member-select-placeholder">
+                                                {selectedMembers.length === 0
+                                                    ? t('transactions.add.selectMember')
+                                                    : `${selectedMembers.length} sélectionné(s)`}
+                                            </span>
+                                            <span className="member-select-arrow" aria-hidden>
+                                                ▾
+                                            </span>
+                                        </button>
+                                        {membersOpen && (
+                                            <button
+                                                type="button"
+                                                className="member-select-close-inline"
+                                                onClick={() => setMembersOpen(false)}
+                                                aria-label={t('transactions.add.cancel')}
+                                            >
+                                                ×
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
+
+                                <div className="member-list-mobile">
+                                    {users
+                                        .filter(u => membersOpen || selectedMembers.some(m => m.userId === u.id))
+                                        .map(u => {
+                                            const selectedEntry = selectedMembers.find(m => m.userId === u.id)
+                                            const isSelected = !!selectedEntry
+                                            const father = allUsers.find(x => x.id === (u.id_father ?? -1))
+                                            const mother = allUsers.find(x => x.id === (u.id_mother ?? -1))
+                                            const initials = `${(u.firstname || '').charAt(0)}${(u.lastname || '').charAt(0)}`.toUpperCase()
+                                            return (
+                                                <div
+                                                    key={u.id}
+                                                    className={`member-card ${isSelected ? 'member-card-selected' : ''}`}
+                                                    onClick={() => {
+                                                        if (!membersOpen && isSelected) return
+                                                        toggleMemberSelection(u.id)
+                                                    }}
+                                                >
+                                                    <div className="member-avatar">
+                                                        {u.image_url ? (
+                                                            <img src={u.image_url} alt={`${u.firstname} ${u.lastname}`} />
+                                                        ) : (
+                                                            <span className="member-avatar-initials">{initials || '?'}</span>
+                                                        )}
+                                                    </div>
+                                                    <div className="member-info">
+                                                        <div className="member-main-line">
+                                                            <span className="member-name">{u.firstname} {u.lastname}</span>
+                                                            <span className="member-username">@{u.username}</span>
+                                                        </div>
+                                                        <div className="member-parents">
+                                                            {father && (
+                                                                <span className="me-2">👨 {father.firstname} {father.lastname}</span>
+                                                            )}
+                                                            {mother && (
+                                                                <span>👩 {mother.firstname} {mother.lastname}</span>
+                                                            )}
+                                                            {!father && !mother && (
+                                                                <span className="text-muted">—</span>
+                                                            )}
+                                                        </div>
+                                                        {isSelected && (
+                                                            <div className="member-amount mt-2" onClick={e => e.stopPropagation()}>
+                                                                <input
+                                                                    type="text"
+                                                                    inputMode="decimal"
+                                                                    className="form-control form-control-sm"
+                                                                    placeholder={t('transactions.add.amountPerMemberPlaceholder')}
+                                                                    value={selectedEntry?.amount || ''}
+                                                                    onChange={e => updateMemberAmount(u.id, e.target.value)}
+                                                                />
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                    <div className="member-check" aria-hidden>
+                                                        {isSelected && <span>✓</span>}
+                                                    </div>
+                                                </div>
+                                            )
+                                        })}
+                                </div>
                             </div>
                         )}
                         {/* Amount first */}
+                        {!canChooseMember && (
                         <div className="col-md-6 form-section">
                             <label className="form-label label-with-icon label-split">
                                 <span className="label-left">
@@ -381,9 +541,10 @@ export default function AddTransaction({ onSuccess, onCancel }: { onSuccess?: ()
                                 required
                             />
                             <div className="form-text">{t('transactions.add.currency', 'Devise: Franc Guinéen (GNF)')}</div>
-                            {/* Inline formatted hint removed; formatting shown directly in input */}
+                            {/* Inline formatted hint removed; formatting shown directement dans le champ */}
                             {/* Inline rank pill moved into label; removed below display */}
                         </div>
+                        )}
                         {/* Type next to amount */}
                         <div className="col-md-6 form-section">
                             <label className="form-label label-with-icon">
